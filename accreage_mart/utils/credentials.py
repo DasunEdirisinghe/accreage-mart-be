@@ -104,6 +104,21 @@ def send_password_reset(user_name: str) -> str | None:
 	return link if _expose_link() else None
 
 
+def is_key_valid(key: str) -> bool:
+	"""Whether a set-password key exists and hasn't expired (does not consume it)."""
+	if not key:
+		return False
+	user_name = frappe.db.get_value("User", {"reset_password_key": key})
+	if not user_name:
+		return False
+	generated_on = frappe.db.get_value("User", user_name, "last_reset_password_key_generated_on")
+	if generated_on:
+		age = (now_datetime() - get_datetime(generated_on)).total_seconds()
+		if age > _key_expiry_seconds():
+			return False
+	return True
+
+
 def consume_key(key: str, new_password: str) -> str:
 	"""Validate the key, set the password, activate the account. Returns the user id."""
 	if not key:

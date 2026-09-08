@@ -1,7 +1,13 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from accreage_mart.api.auth import request_password_reset, resend_activation, set_password
+from accreage_mart.api.auth import (
+	account_hint,
+	check_reset_key,
+	request_password_reset,
+	resend_activation,
+	set_password,
+)
 from accreage_mart.utils.credentials import consume_key, validate_password_policy
 from accreage_mart.utils.profile import create_platform_user
 
@@ -74,3 +80,18 @@ class TestCredentials(FrappeTestCase):
 	def test_consume_key_rejects_unknown_key(self):
 		with self.assertRaises(frappe.ValidationError):
 			consume_key("not-a-real-key", "Harvest2026")
+
+	def test_check_reset_key(self):
+		key = self._issue_key()
+		self.assertTrue(check_reset_key(key)["valid"])
+		self.assertFalse(check_reset_key("garbage")["valid"])
+		set_password(key, "Harvest2026")
+		self.assertFalse(check_reset_key(key)["valid"])  # consumed
+
+	def test_account_hint_only_flags_invited(self):
+		self.assertEqual(account_hint(INVITEE), {"invited": True})
+		self.assertEqual(account_hint("nobody@nowhere.lk"), {})
+
+		key = frappe.db.get_value("User", INVITEE, "reset_password_key") or self._issue_key()
+		set_password(key, "Harvest2026")
+		self.assertEqual(account_hint(INVITEE), {})  # now active

@@ -12,6 +12,8 @@ get_user_info             authenticated     current user + primary role + profil
 register_buyer            guest             rate-limited (Story 1.9)
 register_seller           guest             rate-limited (Story 1.10)
 set_password              guest             key-based, single use (Story 1.8)
+check_reset_key           guest             is a set-password link still valid (1.8)
+account_hint              guest             is an address a pending account (1.8)
 request_password_reset    guest             generic response, rate-limited (1.8)
 resend_activation         guest             only for status "invited" (Story 1.8)
 create_staff              Admin / Administrator   emails an invite (Story 1.11)
@@ -26,7 +28,12 @@ import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
 
-from accreage_mart.utils.credentials import consume_key, send_onboarding_link, send_password_reset
+from accreage_mart.utils.credentials import (
+	consume_key,
+	is_key_valid,
+	send_onboarding_link,
+	send_password_reset,
+)
 from accreage_mart.utils.profile import get_account_status, get_primary_role, get_profile
 
 # Always the same, regardless of whether the address is known (no account enumeration).
@@ -104,3 +111,22 @@ def set_password(key: str, new_password: str) -> dict:
 	"""Set the password behind an emailed key and activate the account. Single use."""
 	user_name = consume_key(key, new_password)
 	return {"ok": True, "email": user_name}
+
+
+@frappe.whitelist(allow_guest=True)
+@rate_limit(key="key", limit=30, seconds=60 * 60)
+def check_reset_key(key: str) -> dict:
+	"""Whether a set-password link is still usable — lets the page show the right
+	state before the person fills anything in."""
+	return {"valid": is_key_valid(key)}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(key="email", limit=10, seconds=60 * 60)
+def account_hint(email: str) -> dict:
+	"""Minimal login-screen hint: only whether the address belongs to an account
+	still awaiting activation, so we can offer to resend the link on a failed login."""
+	user_name = _lookup(email)
+	if user_name and frappe.db.get_value("User", user_name, "custom_account_status") == "invited":
+		return {"invited": True}
+	return {}
