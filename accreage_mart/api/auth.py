@@ -24,8 +24,13 @@ them directly.
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
+from accreage_mart.utils.credentials import consume_key, send_onboarding_link, send_password_reset
 from accreage_mart.utils.profile import get_account_status, get_primary_role, get_profile
+
+# Always the same, regardless of whether the address is known (no account enumeration).
+_GENERIC_OK = {"ok": True}
 
 
 @frappe.whitelist()
@@ -55,3 +60,47 @@ def get_user_info() -> dict:
 		"verified": bool(profile.get("verified")) if profile else False,
 		"profile": profile,
 	}
+
+
+def _lookup(email: str) -> str | None:
+	return frappe.db.get_value("User", {"email": (email or "").strip().lower()})
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(key="email", limit=5, seconds=60 * 60)
+def request_password_reset(email: str) -> dict:
+	"""Email a link to set a new password. Generic response either way. An account
+	still in "invited" gets the onboarding link instead of a reset link."""
+	response = dict(_GENERIC_OK)
+	user_name = _lookup(email)
+	if user_name:
+		status = frappe.db.get_value("User", user_name, "custom_account_status")
+		link = (
+			send_onboarding_link(user_name)
+			if status == "invited"
+			else send_password_reset(user_name)
+		)
+		if link:  # dev: no SMTP configured
+			response["dev_link"] = link
+	return response
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(key="email", limit=5, seconds=60 * 60)
+def resend_activation(email: str) -> dict:
+	"""Re-send the set-password link for an account still in "invited"."""
+	response = dict(_GENERIC_OK)
+	user_name = _lookup(email)
+	if user_name and frappe.db.get_value("User", user_name, "custom_account_status") == "invited":
+		link = send_onboarding_link(user_name)
+		if link:
+			response["dev_link"] = link
+	return response
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(key="key", limit=10, seconds=60 * 60)
+def set_password(key: str, new_password: str) -> dict:
+	"""Set the password behind an emailed key and activate the account. Single use."""
+	user_name = consume_key(key, new_password)
+	return {"ok": True, "email": user_name}
