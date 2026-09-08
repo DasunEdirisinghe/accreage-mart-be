@@ -83,7 +83,8 @@ app_license = "mit"
 # ------------
 
 # before_install = "accreage_mart.install.before_install"
-# after_install = "accreage_mart.install.after_install"
+after_install = "accreage_mart.setup.install.after_install"
+after_migrate = "accreage_mart.setup.install.after_migrate"
 
 # Uninstallation
 # ------------
