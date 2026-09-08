@@ -10,6 +10,14 @@ from accreage_mart.utils.profile import PLATFORM_ROLES
 
 SEED_ADMIN_EMAIL = "admin@accreagemart.lk"
 
+DEMO_PASSWORD = "demo1234"  # noqa: S105 — dev-only demo accounts
+DEMO_USERS = (
+	{"email": "buyer@demo.accreagemart.lk", "name": "Demo Buyer", "role": "Buyer"},
+	{"email": "seller@demo.accreagemart.lk", "name": "Demo Seller", "role": "Seller"},
+	{"email": "staff@demo.accreagemart.lk", "name": "Demo Staff", "role": "Staff"},
+	{"email": "admin@demo.accreagemart.lk", "name": "Demo Admin", "role": "Admin"},
+)
+
 
 def after_install():
 	_setup()
@@ -23,6 +31,7 @@ def _setup():
 	ensure_roles()
 	ensure_custom_fields()
 	ensure_seed_admin()
+	ensure_demo_users()
 	frappe.db.commit()
 
 
@@ -81,3 +90,63 @@ def ensure_seed_admin():
 
 	user.add_roles("Admin", "System Manager")
 	user.db_set("custom_account_status", "invited")
+
+
+def ensure_demo_users():
+	"""One active account per role for the demo quick sign-in cards.
+
+	Dev sites only (``developer_mode``). Password is ``demo1234``. The buyer and
+	seller also get a verified profile so the seller isn't held at the pending gate.
+	"""
+	if not frappe.conf.get("developer_mode"):
+		return
+
+	from frappe.utils.password import update_password
+
+	for spec in DEMO_USERS:
+		if frappe.db.exists("User", spec["email"]):
+			continue
+		user = frappe.new_doc("User")
+		user.email = spec["email"]
+		user.first_name = spec["name"]
+		user.user_type = "System User"
+		user.enabled = 1
+		user.send_welcome_email = 0
+		user.flags.no_welcome_mail = True
+		user.insert(ignore_permissions=True)
+		user.add_roles(spec["role"], "System Manager")
+		user.db_set("custom_account_status", "active")
+		update_password(spec["email"], DEMO_PASSWORD)
+
+	_ensure_demo_profile(
+		"buyer@demo.accreagemart.lk",
+		"Buyer Profile",
+		{
+			"business_name": "Demo Hotels (Pvt) Ltd",
+			"buyer_type": "Hotel",
+			"location": "Colombo 03",
+			"district": "Colombo",
+			"verified": 1,
+		},
+	)
+	_ensure_demo_profile(
+		"seller@demo.accreagemart.lk",
+		"Seller Profile",
+		{
+			"business_name": "Demo Fresh Farms",
+			"location": "Nuwara Eliya",
+			"district": "Nuwara Eliya",
+			"description": "Demo seller account.",
+			"trust_score": 4.5,
+			"verified": 1,
+		},
+	)
+
+
+def _ensure_demo_profile(user: str, doctype: str, fields: dict):
+	if not frappe.db.exists("User", user) or frappe.db.exists(doctype, {"user": user}):
+		return
+	doc = frappe.new_doc(doctype)
+	doc.user = user
+	doc.update(fields)
+	doc.insert(ignore_permissions=True)

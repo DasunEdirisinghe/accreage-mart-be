@@ -90,3 +90,25 @@ class TestAuthModel(FrappeTestCase):
 
 	def test_get_profile_returns_none_without_profile(self):
 		self.assertIsNone(get_profile("Administrator", "admin"))
+
+	def test_demo_users_seeded_on_dev_site(self):
+		if not frappe.conf.get("developer_mode"):
+			self.skipTest("demo users are only seeded on developer_mode sites")
+
+		for email, role in (
+			("buyer@demo.accreagemart.lk", "buyer"),
+			("seller@demo.accreagemart.lk", "seller"),
+			("staff@demo.accreagemart.lk", "staff"),
+			("admin@demo.accreagemart.lk", "admin"),
+		):
+			self.assertTrue(frappe.db.exists("User", email), f"{email} not seeded")
+			self.assertEqual(get_primary_role(email), role)
+			self.assertEqual(
+				frappe.db.get_value("User", email, "custom_account_status"), "active"
+			)
+
+		self.assertTrue(frappe.db.exists("Buyer Profile", {"user": "buyer@demo.accreagemart.lk"}))
+		self.assertEqual(
+			frappe.db.get_value("Seller Profile", {"user": "seller@demo.accreagemart.lk"}, "verified"),
+			1,
+		)
