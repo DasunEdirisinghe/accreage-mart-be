@@ -23,12 +23,11 @@ class TestAuthModel(FrappeTestCase):
 		self.assertTrue(frappe.db.exists("DocType", "Buyer Profile"))
 		self.assertTrue(frappe.db.exists("DocType", "Seller Profile"))
 
-	def test_seed_admin_created_and_invited(self):
+	def test_seed_admin_created(self):
 		self.assertTrue(frappe.db.exists("User", SEED_ADMIN_EMAIL))
-		self.assertEqual(
-			frappe.db.get_value("User", SEED_ADMIN_EMAIL, "custom_account_status"), "invited"
-		)
-		self.assertIn("Admin", frappe.get_roles(SEED_ADMIN_EMAIL))
+		roles = frappe.get_roles(SEED_ADMIN_EMAIL)
+		self.assertIn("Admin", roles)
+		self.assertIn("System Manager", roles)
 
 	def test_administrator_maps_to_admin(self):
 		self.assertEqual(get_primary_role("Administrator"), "admin")

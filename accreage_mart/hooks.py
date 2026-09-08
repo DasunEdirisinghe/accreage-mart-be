@@ -170,7 +170,7 @@ after_migrate = "accreage_mart.setup.install.after_migrate"
 # Testing
 # -------
 
-# before_tests = "accreage_mart.install.before_tests"
+before_tests = "accreage_mart.setup.install.before_tests"
 
 # Overriding Methods
 # ------------------------------

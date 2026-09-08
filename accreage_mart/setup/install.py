@@ -27,6 +27,12 @@ def after_migrate():
 	_setup()
 
 
+def before_tests():
+	"""Make sure the auth model is in place before the suite runs, regardless of
+	whether ``bench migrate`` was run first."""
+	_setup()
+
+
 def _setup():
 	ensure_roles()
 	ensure_custom_fields()
@@ -57,8 +63,11 @@ def ensure_custom_fields():
 					"fieldname": "custom_account_status",
 					"label": "Account Status",
 					"fieldtype": "Select",
-					"options": "invited\nactive\nsuspended\ndeactivated",
-					"default": "active",
+					# No stored default — a blank value is inferred from `enabled`
+					# (see accreage_mart.utils.profile.get_account_status). A column
+					# default of "active" gets backfilled onto invited users by
+					# ``bench migrate``, which would silently activate them.
+					"options": "\ninvited\nactive\nsuspended\ndeactivated",
 					"insert_after": "enabled",
 					"in_standard_filter": 1,
 					"description": "Accreage Mart account lifecycle state.",
@@ -72,8 +81,8 @@ def ensure_custom_fields():
 def ensure_seed_admin():
 	"""Seed one named Admin so a fresh site has someone who can provision staff.
 
-	Created in "invited" — it onboards through the same emailed set-password link as
-	everyone else. Frappe's built-in ``Administrator`` also works as an admin.
+	Created disabled — it gets in through the password-reset / set-password flow
+	(Story 1.8). Frappe's built-in ``Administrator`` also works as an admin.
 	"""
 	if frappe.db.exists("User", SEED_ADMIN_EMAIL):
 		return
@@ -87,9 +96,8 @@ def ensure_seed_admin():
 	user.send_welcome_email = 0
 	user.flags.no_welcome_mail = True
 	user.insert(ignore_permissions=True)
-
 	user.add_roles("Admin", "System Manager")
-	user.db_set("custom_account_status", "invited")
+	frappe.db.set_value("User", SEED_ADMIN_EMAIL, "custom_account_status", "invited")
 
 
 def ensure_demo_users():

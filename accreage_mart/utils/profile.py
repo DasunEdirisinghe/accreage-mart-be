@@ -33,7 +33,8 @@ def get_account_status(user_doc) -> str:
 	status = user_doc.get("custom_account_status")
 	if status in ACCOUNT_STATUSES:
 		return status
-	return "active" if user_doc.enabled else "deactivated"
+	# No explicit status stored — infer from `enabled`.
+	return "active" if user_doc.enabled else "invited"
 
 
 def get_profile(user: str, role: str | None = None) -> dict | None:
