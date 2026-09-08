@@ -17,6 +17,8 @@ account_hint              guest             is an address a pending account (1.8
 request_password_reset    guest             generic response, rate-limited (1.8)
 resend_activation         guest             only for status "invited" (Story 1.8)
 create_staff              Admin / Administrator   emails an invite (Story 1.11)
+list_accounts             Admin / Administrator   real staff/member rows (Story 1.14)
+set_account_status        Admin / Administrator   active/suspended/deactivated (Story 1.14)
 pending_accounts          Staff / Admin     unverified buyers/sellers (Story 1.13)
 verify_account            Staff / Admin     flips profile.verified (Story 1.13)
 ========================  ================  ===================================
@@ -185,6 +187,74 @@ def pending_accounts() -> list[dict]:
 				}
 			)
 	return rows
+
+
+@frappe.whitelist()
+def list_accounts(kind: str = "staff") -> list[dict]:
+	"""Real account rows for the admin tables. Admin/Administrator only.
+
+	kind="staff"   -> users holding Staff or Admin
+	kind="members" -> users holding Buyer or Seller, with their profile
+	"""
+	registration.require_admin()
+
+	wanted = {"Staff", "Admin"} if kind == "staff" else {"Buyer", "Seller"}
+	rows = []
+	seen = set()
+
+	for has_role in frappe.get_all(
+		"Has Role", filters={"role": ["in", list(wanted)], "parenttype": "User"}, fields=["parent"]
+	):
+		email = has_role.parent
+		if email in seen or email in ("Guest", "Administrator"):
+			continue
+		seen.add(email)
+
+		user = frappe.db.get_value(
+			"User",
+			email,
+			["full_name", "custom_account_status", "enabled", "creation"],
+			as_dict=True,
+		)
+		if not user:
+			continue
+
+		role = get_primary_role(email)
+		profile = get_profile(email, role)
+		rows.append(
+			{
+				"email": email,
+				"fullName": user.full_name or email,
+				"role": role,
+				"status": get_account_status(user),
+				"businessName": (profile or {}).get("businessName"),
+				"since": str(user.creation),
+			}
+		)
+
+	rows.sort(key=lambda r: r["since"], reverse=True)
+	return rows
+
+
+@frappe.whitelist(methods=["POST"])
+def set_account_status(email: str, status: str) -> dict:
+	"""Activate / suspend / deactivate an account. Admin/Administrator only."""
+	registration.require_admin()
+
+	if status not in ("active", "suspended", "deactivated"):
+		frappe.throw(_("Invalid status."))
+	if email in ("Administrator", frappe.session.user):
+		frappe.throw(_("You can't change this account's status."), frappe.PermissionError)
+	if not frappe.db.exists("User", email):
+		frappe.throw(_("No such account."))
+
+	frappe.db.set_value(
+		"User",
+		email,
+		{"custom_account_status": status, "enabled": 1 if status == "active" else 0},
+	)
+	frappe.db.commit()
+	return {"ok": True}
 
 
 @frappe.whitelist(methods=["POST"])
