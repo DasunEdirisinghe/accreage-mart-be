@@ -7,9 +7,15 @@ SELLER = "approve.seller@x.lk"
 
 
 class TestApprovals(FrappeTestCase):
-	def setUp(self):
+	def _purge(self):
+		for doctype in ("Seller Profile", "Buyer Profile"):
+			if frappe.db.exists(doctype, {"user": SELLER}):
+				frappe.delete_doc(doctype, SELLER, force=True, ignore_permissions=True)
 		if frappe.db.exists("User", SELLER):
 			frappe.delete_doc("User", SELLER, force=True, ignore_permissions=True)
+
+	def setUp(self):
+		self._purge()
 		register_seller(
 			full_name="Approve Seller",
 			business_name="Approve Farms",
@@ -21,8 +27,7 @@ class TestApprovals(FrappeTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		if frappe.db.exists("User", SELLER):
-			frappe.delete_doc("User", SELLER, force=True, ignore_permissions=True)
+		self._purge()
 
 	def test_pending_lists_the_unverified_seller(self):
 		emails = [row["email"] for row in pending_accounts()]

@@ -7,6 +7,9 @@ from accreage_mart.api.auth import create_staff, register_buyer, register_seller
 class TestRegistration(FrappeTestCase):
 	def _cleanup(self, *emails):
 		for email in emails:
+			for doctype in ("Buyer Profile", "Seller Profile"):
+				if frappe.db.exists(doctype, {"user": email}):
+					frappe.delete_doc(doctype, email, force=True, ignore_permissions=True)
 			if frappe.db.exists("User", email):
 				frappe.delete_doc("User", email, force=True, ignore_permissions=True)
 
