@@ -50,54 +50,58 @@ def _expiry_note() -> str:
 	return f"This link expires in {hours} hour{'s' if hours != 1 else ''}."
 
 
-def send_onboarding_link(user_name: str, *, staff: bool = False) -> str | None:
-	"""Set-password link for a freshly created (invited) account. Returns the link
-	when SMTP isn't configured, else sends the email and returns None."""
-	link = _link_for(user_name)
-	if not smtp_configured():
-		return link
+def _expose_link() -> bool:
+	"""Return the link in the API response when it can't (or might not) be emailed."""
+	return not smtp_configured() or bool(frappe.conf.get("developer_mode"))
 
+
+def send_onboarding_link(user_name: str, *, staff: bool = False) -> str | None:
+	"""Email a set-password link to a freshly created (invited) account. Returns the
+	link too on dev / no-SMTP sites so the flow is testable without email."""
+	link = _link_for(user_name)
 	full_name = frappe.db.get_value("User", user_name, "full_name") or "there"
-	send_branded_email(
-		recipient=user_name,
-		subject="Set your Accreage Mart password",
-		heading="You've been added to Accreage Mart" if staff else "Welcome to Accreage Mart",
-		body_lines=[
-			f"Hi {full_name},",
-			(
-				"An administrator created a staff account for you. "
-				"Set a password to sign in."
-				if staff
-				else "Your account is ready. Set a password to finish signing up."
-			),
-		],
-		cta_label="Set my password",
-		cta_url=link,
-		footer_note=_expiry_note(),
-	)
-	return None
+
+	if smtp_configured():
+		send_branded_email(
+			recipient=user_name,
+			subject="Set your Accreage Mart password",
+			heading="You've been added to Accreage Mart" if staff else "Welcome to Accreage Mart",
+			body_lines=[
+				f"Hi {full_name},",
+				(
+					"An administrator created a staff account for you. Set a password to sign in."
+					if staff
+					else "Your account is ready. Set a password to finish signing up."
+				),
+			],
+			cta_label="Set my password",
+			cta_url=link,
+			footer_note=_expiry_note(),
+		)
+
+	return link if _expose_link() else None
 
 
 def send_password_reset(user_name: str) -> str | None:
 	link = _link_for(user_name)
-	if not smtp_configured():
-		return link
-
 	full_name = frappe.db.get_value("User", user_name, "full_name") or "there"
-	send_branded_email(
-		recipient=user_name,
-		subject="Reset your Accreage Mart password",
-		heading="Reset your password",
-		body_lines=[
-			f"Hi {full_name},",
-			"We got a request to reset your password. Choose a new one with the button below.",
-			"If you didn't ask for this, you can ignore this email.",
-		],
-		cta_label="Choose a new password",
-		cta_url=link,
-		footer_note=_expiry_note(),
-	)
-	return None
+
+	if smtp_configured():
+		send_branded_email(
+			recipient=user_name,
+			subject="Reset your Accreage Mart password",
+			heading="Reset your password",
+			body_lines=[
+				f"Hi {full_name},",
+				"We got a request to reset your password. Choose a new one with the button below.",
+				"If you didn't ask for this, you can ignore this email.",
+			],
+			cta_label="Choose a new password",
+			cta_url=link,
+			footer_note=_expiry_note(),
+		)
+
+	return link if _expose_link() else None
 
 
 def consume_key(key: str, new_password: str) -> str:

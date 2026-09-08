@@ -22,9 +22,11 @@ class TestCredentials(FrappeTestCase):
 	def _issue_key(self) -> str:
 		res = request_password_reset(INVITEE)
 		self.assertTrue(res["ok"])
-		# No SMTP on the test site -> the link comes back for dev use.
-		self.assertIn("dev_link", res)
-		return res["dev_link"].split("key=")[1]
+		# Delivery mechanism (email vs dev_link) depends on site SMTP config; the
+		# key itself always lands on the User doc.
+		key = frappe.db.get_value("User", INVITEE, "reset_password_key")
+		self.assertTrue(key)
+		return key
 
 	def test_request_reset_is_generic_for_unknown_email(self):
 		res = request_password_reset("nobody@nowhere.lk")
@@ -59,13 +61,15 @@ class TestCredentials(FrappeTestCase):
 
 	def test_resend_activation_only_for_invited(self):
 		res = resend_activation(INVITEE)
-		self.assertIn("dev_link", res)
+		self.assertTrue(res["ok"])
+		key = frappe.db.get_value("User", INVITEE, "reset_password_key")
+		self.assertTrue(key)
 
-		# Activate, then resend should be a no-op (still generic).
-		key = res["dev_link"].split("key=")[1]
+		# Activate, then resend should be a no-op that issues no new key.
 		set_password(key, "Harvest2026")
-		res2 = resend_activation(INVITEE)
-		self.assertEqual(res2, {"ok": True})
+		frappe.db.set_value("User", INVITEE, "reset_password_key", "")
+		resend_activation(INVITEE)
+		self.assertFalse(frappe.db.get_value("User", INVITEE, "reset_password_key"))
 
 	def test_consume_key_rejects_unknown_key(self):
 		with self.assertRaises(frappe.ValidationError):
