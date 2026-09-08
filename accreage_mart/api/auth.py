@@ -9,8 +9,8 @@ Guard matrix
 Endpoint                  Caller            Notes
 ========================  ================  ===================================
 get_user_info             authenticated     current user + primary role + profile
-register_buyer            guest             rate-limited (Story 1.9)
-register_seller           guest             rate-limited (Story 1.10)
+register_buyer            guest             creates invited User + Buyer Profile (1.9)
+register_seller           guest             creates invited User + Seller Profile (1.10)
 set_password              guest             key-based, single use (Story 1.8)
 check_reset_key           guest             is a set-password link still valid (1.8)
 account_hint              guest             is an address a pending account (1.8)
@@ -35,6 +35,7 @@ from accreage_mart.utils.credentials import (
 	send_password_reset,
 )
 from accreage_mart.utils.profile import get_account_status, get_primary_role, get_profile
+from accreage_mart.utils import registration
 
 # Always the same, regardless of whether the address is known (no account enumeration).
 _GENERIC_OK = {"ok": True}
@@ -119,6 +120,42 @@ def check_reset_key(key: str) -> dict:
 	"""Whether a set-password link is still usable — lets the page show the right
 	state before the person fills anything in."""
 	return {"valid": is_key_valid(key)}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(key="email", limit=5, seconds=60 * 60)
+def register_buyer(
+	full_name: str, business_name: str, email: str, mobile: str, district: str, buyer_type: str
+) -> dict:
+	return registration.register_buyer(
+		full_name=full_name,
+		business_name=business_name,
+		email=email,
+		mobile=mobile,
+		district=district,
+		buyer_type=buyer_type,
+	)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(key="email", limit=5, seconds=60 * 60)
+def register_seller(
+	full_name: str, business_name: str, email: str, mobile: str, district: str, description: str = ""
+) -> dict:
+	return registration.register_seller(
+		full_name=full_name,
+		business_name=business_name,
+		email=email,
+		mobile=mobile,
+		district=district,
+		description=description,
+	)
+
+
+@frappe.whitelist(methods=["POST"])
+def create_staff(full_name: str, email: str, role: str) -> dict:
+	"""Admin provisions a Staff/Admin account and emails an invite. Admin only."""
+	return registration.create_staff(full_name=full_name, email=email, role=role)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
