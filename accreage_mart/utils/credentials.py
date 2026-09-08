@@ -8,7 +8,6 @@ configured, so the flow is usable in development without SMTP.
 import frappe
 from frappe import _
 from frappe.utils import get_datetime, now_datetime
-from frappe.utils.password import test_password_strength
 from frappe.utils.password import update_password as _set_user_password
 
 from accreage_mart.utils.email import send_branded_email, smtp_configured
@@ -151,7 +150,3 @@ def validate_password_policy(password: str, user_name: str) -> None:
 
 	if password.lower() in {email, local_part} or (full_name and password.lower() == full_name):
 		frappe.throw(_("Choose a password that isn't your name or email address."))
-
-	strength = test_password_strength(password, user_inputs=[email, local_part, full_name])
-	if strength and strength.get("score", 0) < 2:
-		frappe.throw(_("That password is too easy to guess — try a longer or less common one."))
