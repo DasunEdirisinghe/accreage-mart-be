@@ -118,6 +118,14 @@ def require_admin():
 	frappe.throw(_("Only an administrator can do this."), frappe.PermissionError)
 
 
+def require_staff():
+	if frappe.session.user == "Administrator" or {"Admin", "Staff"} & set(
+		frappe.get_roles(frappe.session.user)
+	):
+		return
+	frappe.throw(_("Staff access required."), frappe.PermissionError)
+
+
 def create_staff(*, full_name: str, email: str, role: str) -> dict:
 	require_admin()
 	email = (email or "").strip().lower()

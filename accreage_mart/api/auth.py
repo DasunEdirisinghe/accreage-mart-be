@@ -17,6 +17,7 @@ account_hint              guest             is an address a pending account (1.8
 request_password_reset    guest             generic response, rate-limited (1.8)
 resend_activation         guest             only for status "invited" (Story 1.8)
 create_staff              Admin / Administrator   emails an invite (Story 1.11)
+pending_accounts          Staff / Admin     unverified buyers/sellers (Story 1.13)
 verify_account            Staff / Admin     flips profile.verified (Story 1.13)
 ========================  ================  ===================================
 
@@ -156,6 +157,59 @@ def register_seller(
 def create_staff(full_name: str, email: str, role: str) -> dict:
 	"""Admin provisions a Staff/Admin account and emails an invite. Admin only."""
 	return registration.create_staff(full_name=full_name, email=email, role=role)
+
+
+@frappe.whitelist()
+def pending_accounts() -> list[dict]:
+	"""Buyers and sellers whose profile hasn't been staff-verified. Staff/Admin only."""
+	registration.require_staff()
+
+	rows = []
+	for doctype, role in (("Buyer Profile", "buyer"), ("Seller Profile", "seller")):
+		for name in frappe.get_all(doctype, filters={"verified": 0}, pluck="name"):
+			profile = frappe.get_doc(doctype, name)
+			user = frappe.db.get_value(
+				"User", profile.user, ["full_name", "custom_account_status", "creation"], as_dict=True
+			)
+			if not user or user.custom_account_status == "deactivated":
+				continue
+			rows.append(
+				{
+					"email": profile.user,
+					"fullName": user.full_name,
+					"role": role,
+					"businessName": profile.business_name,
+					"district": profile.district,
+					"status": user.custom_account_status,
+					"since": str(user.creation),
+				}
+			)
+	return rows
+
+
+@frappe.whitelist(methods=["POST"])
+def verify_account(email: str) -> dict:
+	"""Mark a buyer/seller profile as verified and notify them. Staff/Admin only."""
+	registration.require_staff()
+
+	for doctype in ("Buyer Profile", "Seller Profile"):
+		name = frappe.db.get_value(doctype, {"user": email})
+		if not name:
+			continue
+		frappe.db.set_value(doctype, name, "verified", 1)
+		frappe.get_doc(
+			{
+				"doctype": "Notification Log",
+				"subject": "Your Accreage Mart account is verified",
+				"for_user": email,
+				"type": "Alert",
+				"email_content": "Your business has been verified — you now have full access.",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.commit()
+		return {"ok": True}
+
+	frappe.throw(_("No buyer or seller profile found for this account."))
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
