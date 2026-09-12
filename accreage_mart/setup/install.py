@@ -36,6 +36,7 @@ def before_tests():
 def _setup():
 	ensure_roles()
 	ensure_custom_fields()
+	ensure_email_templates()
 	ensure_seed_admin()
 	ensure_demo_users()
 	frappe.db.commit()
@@ -76,6 +77,68 @@ def ensure_custom_fields():
 		},
 		ignore_validate=True,
 	)
+
+
+EMAIL_TEMPLATES = {
+	"password_reset": {
+		"subject": "Reset your Accreage Mart password",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>We got a request to reset your password. Choose a new one with the button below.</p>"
+			"<p>If you didn't ask for this, you can ignore this email.</p>"
+		),
+	},
+	"welcome_member": {
+		"subject": "Welcome to Accreage Mart",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Your account is ready. Set a password to finish signing up.</p>"
+		),
+	},
+	"staff_invite": {
+		"subject": "You've been added to Accreage Mart",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>An administrator created a staff account for you. Set a password to sign in.</p>"
+		),
+	},
+	"account_approved": {
+		"subject": "Your Accreage Mart account is verified",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Great news — {{ business_name }} has been verified. Set your password below to sign "
+			"in and get started.</p>"
+		),
+	},
+	"account_rejected": {
+		"subject": "Update on your Accreage Mart application",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>We're unable to verify {{ business_name }} at this time.</p>"
+			"<p><strong>Reason:</strong> {{ reason }}</p>"
+			"<p>You're welcome to update your details and apply again, or reply to this email with "
+			"any questions.</p>"
+		),
+	},
+}
+
+
+def ensure_email_templates():
+	"""Seed the transactional email templates, editable from the desk afterwards.
+
+	Never overwrites an existing template — an admin's content edits survive
+	``bench migrate`` (same idempotency rule as ``ensure_roles``)."""
+	for name, fields in EMAIL_TEMPLATES.items():
+		if frappe.db.exists("Email Template", name):
+			continue
+		frappe.get_doc(
+			{
+				"doctype": "Email Template",
+				"name": name,
+				"subject": fields["subject"],
+				"response": fields["response"],
+			}
+		).insert(ignore_permissions=True)
 
 
 def ensure_seed_admin():

@@ -12,7 +12,9 @@
   "buyer_type",
   "location",
   "district",
-  "verified"
+  "verified",
+  "verification_status",
+  "rejection_reason"
  ],
  "fields": [
   {
@@ -57,6 +59,20 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Verified"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "verification_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Verification Status",
+   "options": "Pending\nApproved\nRejected"
+  },
+  {
+   "depends_on": "eval:doc.verification_status == \"Rejected\"",
+   "fieldname": "rejection_reason",
+   "fieldtype": "Small Text",
+   "label": "Rejection Reason"
   }
  ],
  "index_web_pages_for_search": 1,

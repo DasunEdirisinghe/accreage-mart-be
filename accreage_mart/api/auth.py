@@ -19,8 +19,13 @@ resend_activation         guest             only for status "invited" (Story 1.8
 create_staff              Admin / Administrator   emails an invite (Story 1.11)
 list_accounts             Admin / Administrator   real staff/member rows (Story 1.14)
 set_account_status        Admin / Administrator   active/suspended/deactivated (Story 1.14)
-pending_accounts          Staff / Admin     unverified buyers/sellers (Story 1.13)
-verify_account            Staff / Admin     flips profile.verified (Story 1.13)
+account_applications      Staff / Admin     buyer/seller applications, any status (Story 2.2;
+                                             was pending_accounts, Story 1.13 — now returns
+                                             Pending/Approved/Rejected in one call)
+verify_account            Staff / Admin     approves + mints a set-password link + emails
+                                             account_approved (Story 2.2)
+reject_account            Staff / Admin     rejects with a reason + emails account_rejected
+                                             (Story 2.2)
 ========================  ================  ===================================
 
 Native Frappe ``login`` / ``logout`` handle the session itself; the frontend calls
@@ -34,9 +39,12 @@ from frappe.rate_limiter import rate_limit
 from accreage_mart.utils.credentials import (
 	consume_key,
 	is_key_valid,
+	issue_set_password_link,
 	send_onboarding_link,
 	send_password_reset,
+	should_expose_link,
 )
+from accreage_mart.utils.email import send_templated_email, smtp_configured
 from accreage_mart.utils.profile import get_account_status, get_primary_role, get_profile
 from accreage_mart.utils import registration
 
@@ -162,19 +170,24 @@ def create_staff(full_name: str, email: str, role: str) -> dict:
 
 
 @frappe.whitelist()
-def pending_accounts() -> list[dict]:
-	"""Buyers and sellers whose profile hasn't been staff-verified. Staff/Admin only."""
+def account_applications() -> list[dict]:
+	"""Every buyer/seller application with its verification status, for the
+	Pending / Approved / Rejected tabs on /admin/accounts. Staff/Admin only."""
 	registration.require_staff()
 
 	rows = []
 	for doctype, role in (("Buyer Profile", "buyer"), ("Seller Profile", "seller")):
-		for name in frappe.get_all(doctype, filters={"verified": 0}, pluck="name"):
+		for name in frappe.get_all(doctype, pluck="name"):
 			profile = frappe.get_doc(doctype, name)
 			user = frappe.db.get_value(
-				"User", profile.user, ["full_name", "custom_account_status", "creation"], as_dict=True
+				"User",
+				profile.user,
+				["full_name", "mobile_no", "custom_account_status", "creation"],
+				as_dict=True,
 			)
 			if not user or user.custom_account_status == "deactivated":
 				continue
+			verification_status = (profile.get("verification_status") or "Pending").lower()
 			rows.append(
 				{
 					"email": profile.user,
@@ -182,11 +195,26 @@ def pending_accounts() -> list[dict]:
 					"role": role,
 					"businessName": profile.business_name,
 					"district": profile.district,
-					"status": user.custom_account_status,
+					"mobile": user.mobile_no or "",
+					"description": profile.get("description") or "",
+					"verificationStatus": verification_status,
+					"rejectionReason": profile.get("rejection_reason") or "",
 					"since": str(user.creation),
+					"reviewedOn": str(profile.modified) if verification_status != "pending" else None,
 				}
 			)
+
+	rows.sort(key=lambda r: r["since"], reverse=True)
 	return rows
+
+
+def _find_application(email: str) -> tuple[str, str]:
+	"""(doctype, docname) of the buyer/seller application for this email, or throws."""
+	for doctype in ("Buyer Profile", "Seller Profile"):
+		name = frappe.db.get_value(doctype, {"user": email})
+		if name:
+			return doctype, name
+	frappe.throw(_("No application found for this account."))
 
 
 @frappe.whitelist()
@@ -259,27 +287,69 @@ def set_account_status(email: str, status: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def verify_account(email: str) -> dict:
-	"""Mark a buyer/seller profile as verified and notify them. Staff/Admin only."""
+	"""Approve a buyer/seller application: flip verified/verification_status, mint a
+	fresh set-password link, and email account_approved. Staff/Admin only."""
 	registration.require_staff()
 
-	for doctype in ("Buyer Profile", "Seller Profile"):
-		name = frappe.db.get_value(doctype, {"user": email})
-		if not name:
-			continue
-		frappe.db.set_value(doctype, name, "verified", 1)
-		frappe.get_doc(
-			{
-				"doctype": "Notification Log",
-				"subject": "Your Accreage Mart account is verified",
-				"for_user": email,
-				"type": "Alert",
-				"email_content": "Your business has been verified — you now have full access.",
-			}
-		).insert(ignore_permissions=True)
-		frappe.db.commit()
-		return {"ok": True}
+	doctype, name = _find_application(email)
+	frappe.db.set_value(doctype, name, {"verified": 1, "verification_status": "Approved"})
+	frappe.get_doc(
+		{
+			"doctype": "Notification Log",
+			"subject": "Your Accreage Mart account is verified",
+			"for_user": email,
+			"type": "Alert",
+			"email_content": "Your business has been verified — you now have full access.",
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.commit()
 
-	frappe.throw(_("No buyer or seller profile found for this account."))
+	full_name = frappe.db.get_value("User", email, "full_name") or "there"
+	business_name = frappe.db.get_value(doctype, name, "business_name")
+	link, expiry_note = issue_set_password_link(email)
+
+	if smtp_configured():
+		send_templated_email(
+			key="account_approved",
+			recipient=email,
+			context={"full_name": full_name, "business_name": business_name},
+			cta_label="Set my password",
+			cta_url=link,
+			footer_note=expiry_note,
+		)
+
+	return {"ok": True, "dev_link": link if should_expose_link() else None}
+
+
+@frappe.whitelist(methods=["POST"])
+def reject_account(email: str, reason: str) -> dict:
+	"""Reject a buyer/seller application with a reason and email account_rejected.
+	Staff/Admin only."""
+	registration.require_staff()
+
+	reason = (reason or "").strip()
+	if not reason:
+		frappe.throw(_("A reason is required."))
+
+	doctype, name = _find_application(email)
+	frappe.db.set_value(
+		doctype,
+		name,
+		{"verified": 0, "verification_status": "Rejected", "rejection_reason": reason},
+	)
+	frappe.db.commit()
+
+	full_name = frappe.db.get_value("User", email, "full_name") or "there"
+	business_name = frappe.db.get_value(doctype, name, "business_name")
+
+	if smtp_configured():
+		send_templated_email(
+			key="account_rejected",
+			recipient=email,
+			context={"full_name": full_name, "business_name": business_name, "reason": reason},
+		)
+
+	return {"ok": True}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

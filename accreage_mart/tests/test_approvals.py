@@ -1,7 +1,7 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from accreage_mart.api.auth import pending_accounts, register_seller, verify_account
+from accreage_mart.api.auth import account_applications, register_seller, reject_account, verify_account
 
 SELLER = "approve.seller@x.lk"
 
@@ -14,13 +14,16 @@ class TestApprovals(FrappeTestCase):
 		if frappe.db.exists("User", SELLER):
 			frappe.delete_doc("User", SELLER, force=True, ignore_permissions=True)
 
+	def _row(self):
+		return next(row for row in account_applications() if row["email"] == SELLER)
+
 	def setUp(self):
 		self._purge()
 		register_seller(
 			full_name="Approve Seller",
 			business_name="Approve Farms",
 			email=SELLER,
-			mobile="",
+			mobile="0771234567",
 			district="Kandy",
 		)
 		frappe.set_user("Administrator")
@@ -29,19 +32,54 @@ class TestApprovals(FrappeTestCase):
 		frappe.set_user("Administrator")
 		self._purge()
 
-	def test_pending_lists_the_unverified_seller(self):
-		emails = [row["email"] for row in pending_accounts()]
-		self.assertIn(SELLER, emails)
+	def test_application_lists_the_seller_as_pending_with_registration_fields(self):
+		row = self._row()
+		self.assertEqual(row["verificationStatus"], "pending")
+		self.assertEqual(row["businessName"], "Approve Farms")
+		self.assertEqual(row["mobile"], "0771234567")
+		self.assertEqual(row["district"], "Kandy")
+		self.assertIsNone(row["reviewedOn"])
 
-	def test_verify_account_flips_the_flag_and_drops_from_pending(self):
-		verify_account(SELLER)
+	def test_verify_account_approves_and_mints_a_set_password_link(self):
+		out = verify_account(SELLER)
+		self.assertTrue(out["ok"])
+
 		self.assertEqual(frappe.db.get_value("Seller Profile", {"user": SELLER}, "verified"), 1)
-		self.assertNotIn(SELLER, [row["email"] for row in pending_accounts()])
+		row = self._row()
+		self.assertEqual(row["verificationStatus"], "approved")
+		self.assertIsNotNone(row["reviewedOn"])
+		# Dev sites (no SMTP) expose the set-password link directly.
+		self.assertTrue(out.get("dev_link"))
+		self.assertTrue(frappe.db.get_value("User", SELLER, "reset_password_key"))
 
-	def test_pending_accounts_requires_staff(self):
+	def test_reject_account_requires_a_reason(self):
+		with self.assertRaises(frappe.ValidationError):
+			reject_account(SELLER, "")
+
+	def test_reject_account_records_the_reason_and_leaves_unverified(self):
+		out = reject_account(SELLER, "Business registration documents did not match.")
+		self.assertTrue(out["ok"])
+
+		self.assertEqual(frappe.db.get_value("Seller Profile", {"user": SELLER}, "verified"), 0)
+		row = self._row()
+		self.assertEqual(row["verificationStatus"], "rejected")
+		self.assertEqual(row["rejectionReason"], "Business registration documents did not match.")
+		self.assertIsNotNone(row["reviewedOn"])
+
+	def test_account_applications_requires_staff(self):
 		frappe.set_user("Guest")
 		try:
 			with self.assertRaises(frappe.PermissionError):
-				pending_accounts()
+				account_applications()
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_verify_and_reject_require_staff(self):
+		frappe.set_user("Guest")
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				verify_account(SELLER)
+			with self.assertRaises(frappe.PermissionError):
+				reject_account(SELLER, "no")
 		finally:
 			frappe.set_user("Administrator")
