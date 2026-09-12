@@ -20,6 +20,13 @@ delete_category                  Staff/Admin       removes a Category - allowed 
                                                     linked to a commodity (Story 3.15)
 list_commodities                 Staff/Admin       read-only commodity list for the Category
                                                     form's commodity picker (Story 3.15)
+list_commodities_overview        Staff/Admin       richer commodity list (market, category,
+                                                    is_active, last_evaluated_on, mape_1_7d)
+                                                    for /admin/commodities (Story 3.16)
+get_commodity                    Staff/Admin       one commodity's full fields + its forecast
+                                                    days, for /admin/commodities/[id] (Story
+                                                    3.16); view-only, reuses
+                                                    get_price_history_and_forecast internally
 ==============================  ================  ===================================
 """
 
@@ -216,3 +223,45 @@ def list_commodities(search: str = None) -> list:
 		order_by="name asc",
 		limit_page_length=200,
 	)
+
+
+@frappe.whitelist()
+def list_commodities_overview() -> list:
+	"""Every Commodity row's admin-list fields, for /admin/commodities (Story 3.16). Staff/Admin
+	only; this page and get_commodity below are both view-only - no create/edit/delete."""
+	registration.require_staff()
+	return frappe.get_all(
+		"Commodity",
+		fields=["name", "harti_category", "market", "is_active", "last_evaluated_on", "mape_1_7d"],
+		order_by="name asc",
+	)
+
+
+@frappe.whitelist()
+def get_commodity(name: str) -> dict:
+	"""One Commodity's full fields plus its current 30-day forecast, for
+	/admin/commodities/[id] (Story 3.16). Staff/Admin only, view-only. Reuses
+	get_price_history_and_forecast for the forecast_days query rather than duplicating it -
+	the history/accuracy parts of that result are discarded since this view doesn't use them."""
+	registration.require_staff()
+	if not frappe.db.exists("Commodity", name):
+		frappe.throw(_("Unknown commodity: {0}").format(name), frappe.DoesNotExistError)
+
+	commodity_doc = frappe.get_doc("Commodity", name)
+	forecast = get_price_history_and_forecast(name)
+
+	return {
+		"name": commodity_doc.name,
+		"harti_category": commodity_doc.harti_category,
+		"market": commodity_doc.market,
+		"unit": commodity_doc.unit,
+		"is_active": commodity_doc.is_active,
+		"mape_1_7d": commodity_doc.mape_1_7d,
+		"mape_8_14d": commodity_doc.mape_8_14d,
+		"mape_15_30d": commodity_doc.mape_15_30d,
+		"sample_size_1_7d": commodity_doc.sample_size_1_7d,
+		"sample_size_8_14d": commodity_doc.sample_size_8_14d,
+		"sample_size_15_30d": commodity_doc.sample_size_15_30d,
+		"last_evaluated_on": commodity_doc.last_evaluated_on,
+		"forecast_days": forecast["forecast_days"],
+	}
