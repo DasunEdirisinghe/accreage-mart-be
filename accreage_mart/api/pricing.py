@@ -1,24 +1,34 @@
-"""Whitelisted read endpoints for the pricing engine.
+"""Whitelisted endpoints for the pricing engine.
 
-Referenced from the frontend (a later, seller-facing epic) as
-``accreage_mart.api.pricing.<fn>``.
+Referenced from the frontend as ``accreage_mart.api.pricing.<fn>``.
 
 Guard matrix
 ------------
 ==============================  ================  ===================================
 Endpoint                        Caller            Notes
 ==============================  ================  ===================================
-get_price_suggestion             authenticated     category -> gated suggestion (Story 3.9)
+get_price_suggestion             authenticated     category -> gated suggestion (Story 3.9;
+                                                    not called from anywhere in this epic -
+                                                    ready for a later, seller-facing epic)
 get_price_history_and_forecast   authenticated     full history + forecast + accuracy,
-                                                    for ForecastChart (Story 3.9)
+                                                    for ForecastChart (Story 3.9; same as above)
+list_categories                  Staff/Admin       all Category rows, for /admin/categories
+                                                    (Story 3.15)
+upsert_category                  Staff/Admin       create (no name) or update (name given)
+                                                    a Category (Story 3.15)
+delete_category                  Staff/Admin       removes a Category - allowed even when
+                                                    linked to a commodity (Story 3.15)
+list_commodities                 Staff/Admin       read-only commodity list for the Category
+                                                    form's commodity picker (Story 3.15)
 ==============================  ================  ===================================
-
-Neither endpoint is called from anywhere in this epic - both exist, tested, and correct,
-ready for whichever later epic wires the seller-facing listing form / dashboard charts.
 """
 
 import frappe
 from frappe import _
+
+from accreage_mart.utils import registration
+
+CATEGORY_AREAS = {"Fruits", "Vegetables", "Fertilizer", "Tools", "Rice", "Other"}
 
 
 def _require_authenticated():
@@ -129,3 +139,80 @@ def get_price_history_and_forecast(commodity: str) -> dict:
 			"last_evaluated_on": commodity_doc.last_evaluated_on,
 		},
 	}
+
+
+@frappe.whitelist()
+def list_categories() -> list:
+	"""Every Category row, for the /admin/categories management page. Staff/Admin only."""
+	registration.require_staff()
+	return frappe.get_all(
+		"Category",
+		fields=["name", "title", "area", "commodity"],
+		order_by="title asc",
+	)
+
+
+@frappe.whitelist()
+def upsert_category(title: str, area: str, commodity: str = None, name: str = None) -> dict:
+	"""Creates a new Category, or updates the one named by `name` when given. Staff/Admin only.
+	This never creates a Commodity - `commodity` must already exist if provided."""
+	registration.require_staff()
+
+	if not title or not title.strip():
+		frappe.throw(_("Title is required."))
+	if area not in CATEGORY_AREAS:
+		frappe.throw(_("Invalid area: {0}").format(area))
+	if commodity and not frappe.db.exists("Commodity", commodity):
+		frappe.throw(_("Unknown commodity: {0}").format(commodity))
+
+	if name:
+		if not frappe.db.exists("Category", name):
+			frappe.throw(_("Category not found: {0}").format(name), frappe.DoesNotExistError)
+		doc = frappe.get_doc("Category", name)
+		doc.title = title.strip()
+		doc.area = area
+		doc.commodity = commodity or None
+		doc.save(ignore_permissions=True)
+	else:
+		doc = frappe.get_doc(
+			{
+				"doctype": "Category",
+				"title": title.strip(),
+				"area": area,
+				"commodity": commodity or None,
+			}
+		)
+		doc.insert(ignore_permissions=True)
+
+	frappe.db.commit()
+	return {"name": doc.name, "title": doc.title, "area": doc.area, "commodity": doc.commodity}
+
+
+@frappe.whitelist()
+def delete_category(name: str) -> dict:
+	"""Removes a Category. Deleting one linked to a commodity is allowed - it doesn't touch
+	the commodity or its data. Staff/Admin only."""
+	registration.require_staff()
+	if not frappe.db.exists("Category", name):
+		frappe.throw(_("Category not found: {0}").format(name), frappe.DoesNotExistError)
+	frappe.delete_doc("Category", name, ignore_permissions=True)
+	frappe.db.commit()
+	return {"ok": True}
+
+
+@frappe.whitelist()
+def list_commodities(search: str = None) -> list:
+	"""Read-only commodity list for the Category form's commodity picker. Staff/Admin only.
+	Since Commodity autonames as field:commodity_name, `name` IS the display value already -
+	no separate label lookup needed."""
+	registration.require_staff()
+	filters = {}
+	if search:
+		filters["commodity_name"] = ["like", f"%{search}%"]
+	return frappe.get_all(
+		"Commodity",
+		filters=filters,
+		fields=["name"],
+		order_by="name asc",
+		limit_page_length=200,
+	)
