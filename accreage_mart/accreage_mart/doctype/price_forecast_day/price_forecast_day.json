@@ -1,0 +1,67 @@
+{
+ "actions": [],
+ "creation": "2026-09-12 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "forecast_date",
+  "horizon_days_ahead",
+  "predicted_price",
+  "lower_bound",
+  "upper_bound"
+ ],
+ "fields": [
+  {
+   "fieldname": "forecast_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Forecast Date",
+   "reqd": 1
+  },
+  {
+   "description": "1-30. Which trailing-window bucket (1-7d/8-14d/15-30d) this day's later accuracy score belongs to is derived from this value.",
+   "fieldname": "horizon_days_ahead",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Horizon Days Ahead",
+   "reqd": 1
+  },
+  {
+   "fieldname": "predicted_price",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Predicted Price",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "description": "Recalibrated, not Prophet's raw yhat_lower (see Price Suggestion Settings.interval_recalibration_factor).",
+   "fieldname": "lower_bound",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Lower Bound",
+   "precision": "2"
+  },
+  {
+   "description": "Recalibrated, not Prophet's raw yhat_upper.",
+   "fieldname": "upper_bound",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Upper Bound",
+   "precision": "2"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-12 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Price Forecast Day",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

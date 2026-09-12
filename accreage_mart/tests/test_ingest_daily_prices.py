@@ -20,6 +20,9 @@ class TestIngestDailyPrices(FrappeTestCase):
 		frappe.set_user("Administrator")
 
 	def _purge(self):
+		# tasks._log() (called via _ingest_one_date) calls frappe.db.commit() internally,
+		# which breaks FrappeTestCase's usual auto-rollback - see test_backfill.py's _purge
+		# for the full explanation. This cleanup must commit its own deletes explicitly.
 		for rec in frappe.get_all(
 			"Commodity Price Record", filters={"commodity": TEST_COMMODITY}, pluck="name"
 		):
@@ -29,6 +32,7 @@ class TestIngestDailyPrices(FrappeTestCase):
 		for iso_date in ("2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"):
 			if frappe.db.exists("Price Ingestion Log", iso_date):
 				frappe.delete_doc("Price Ingestion Log", iso_date, force=True, ignore_permissions=True)
+		frappe.db.commit()
 
 	# -- date-range logic (max_date injected directly - no DB monkeypatching needed) --
 

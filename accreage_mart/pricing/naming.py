@@ -25,3 +25,19 @@ def commodity_name_for(item: str, category: str) -> str:
 		# producing a name that might collide with another item lacking a category too.
 		raise ValueError(f"category is required to build a commodity_name for item {item!r}")
 	return f"{category} - {item}"
+
+
+def item_for(commodity_name: str, category: str) -> str:
+	"""Reverses commodity_name_for(): recovers the original "item" text from a commodity_name
+	given its already-known category (Commodity.harti_category, the same source column
+	commodity_name_for() was built from). Used by the CSV mirror (Story 3.10) to reconstruct
+	the standalone pipeline's original item/category columns without a second, drifting
+	naming rule."""
+	category = (category or "").strip()
+	prefix = f"{category} - "
+	if not commodity_name.startswith(prefix):
+		raise ValueError(
+			f"commodity_name {commodity_name!r} does not start with expected prefix {prefix!r} "
+			f"derived from category {category!r}"
+		)
+	return commodity_name[len(prefix) :]

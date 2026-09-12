@@ -1,0 +1,116 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "format:{commodity}-{forecast_date}",
+ "creation": "2026-09-12 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "commodity",
+  "forecast_date",
+  "horizon_days_ahead",
+  "column_break_accuracy_log",
+  "predicted_price",
+  "actual_price",
+  "pct_error",
+  "evaluated_on"
+ ],
+ "fields": [
+  {
+   "description": "Autoname is {commodity}-{forecast_date} - a duplicate log row for the same commodity and target date is structurally impossible, matching Commodity Price Record's pattern.",
+   "fieldname": "commodity",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Commodity",
+   "options": "Commodity",
+   "reqd": 1
+  },
+  {
+   "fieldname": "forecast_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Forecast Date",
+   "reqd": 1
+  },
+  {
+   "description": "How many days ahead this was predicted at the time the forecast was generated - determines which accuracy bucket (1-7d/8-14d/15-30d) it rolls into.",
+   "fieldname": "horizon_days_ahead",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Horizon Days Ahead",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_accuracy_log",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "predicted_price",
+   "fieldtype": "Float",
+   "label": "Predicted Price",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "actual_price",
+   "fieldtype": "Float",
+   "label": "Actual Price",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pct_error",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Pct Error",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "description": "The date this comparison was made (today, once the actual became available) - not the same as forecast_date.",
+   "fieldname": "evaluated_on",
+   "fieldtype": "Date",
+   "label": "Evaluated On",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-12 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Forecast Accuracy Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "delete": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin",
+   "share": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff"
+  }
+ ],
+ "sort_field": "evaluated_on",
+ "sort_order": "DESC",
+ "states": []
+}

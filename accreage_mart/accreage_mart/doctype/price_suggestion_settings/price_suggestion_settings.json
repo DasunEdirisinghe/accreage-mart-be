@@ -1,0 +1,95 @@
+{
+ "actions": [],
+ "creation": "2026-09-12 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "direct_suggestion_mape_threshold",
+  "guidance_mape_threshold",
+  "min_sample_size",
+  "column_break_thresholds",
+  "interval_recalibration_factor",
+  "forecast_horizon_days"
+ ],
+ "fields": [
+  {
+   "default": "10",
+   "description": "Below this MAPE (%), a horizon bucket shows a confident, direct price.",
+   "fieldname": "direct_suggestion_mape_threshold",
+   "fieldtype": "Percent",
+   "label": "Direct Suggestion MAPE Threshold"
+  },
+  {
+   "default": "25",
+   "description": "Between the direct threshold and this one, a horizon bucket shows a wide scenario range instead of a point price. Above this, nothing is shown - too unreliable to be useful even as a range.",
+   "fieldname": "guidance_mape_threshold",
+   "fieldtype": "Percent",
+   "label": "Guidance MAPE Threshold"
+  },
+  {
+   "default": "20",
+   "description": "A horizon bucket's MAPE is not trusted for gating below this many realized predictions, regardless of how good the score looks - resolves the 0.0-vs-genuinely-perfect ambiguity a never-evaluated commodity would otherwise have.",
+   "fieldname": "min_sample_size",
+   "fieldtype": "Int",
+   "label": "Minimum Sample Size"
+  },
+  {
+   "fieldname": "column_break_thresholds",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1.5",
+   "description": "PLACEHOLDER pending Story 3.14's real tuning - the interim report found Prophet's nominal 90% interval only covered 58% of real holdout outcomes, so yhat_lower/yhat_upper are widened by this factor before being shown as a suggested range. Not yet validated against live coverage data.",
+   "fieldname": "interval_recalibration_factor",
+   "fieldtype": "Float",
+   "label": "Interval Recalibration Factor",
+   "precision": "2"
+  },
+  {
+   "default": "30",
+   "fieldname": "forecast_horizon_days",
+   "fieldtype": "Int",
+   "label": "Forecast Horizon Days"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-12 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Price Suggestion Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -42,11 +42,17 @@ class TestBackfill(FrappeTestCase):
 		shutil.rmtree(self.tmpdir, ignore_errors=True)
 
 	def _purge(self):
+		# run_backfill() calls frappe.db.commit() internally (correct for the real one-off
+		# script), which breaks FrappeTestCase's usual auto-rollback for this test - so this
+		# cleanup must commit its own deletes explicitly, or they'd be undone by the outer
+		# rollback while the earlier commit's inserts survive, leaking test fixtures into the
+		# real database.
 		for name in ("Onion - Imported", "Big Onion - Imported"):
 			for rec in frappe.get_all("Commodity Price Record", filters={"commodity": name}, pluck="name"):
 				frappe.delete_doc("Commodity Price Record", rec, force=True, ignore_permissions=True)
 			if frappe.db.exists("Commodity", name):
 				frappe.delete_doc("Commodity", name, force=True, ignore_permissions=True)
+		frappe.db.commit()
 
 	def test_backfill_creates_commodities_and_records(self):
 		result = run_backfill(csv_dir=str(self.tmpdir))

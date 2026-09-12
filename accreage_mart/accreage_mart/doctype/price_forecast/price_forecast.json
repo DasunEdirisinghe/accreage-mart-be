@@ -1,0 +1,75 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:commodity",
+ "creation": "2026-09-12 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "commodity",
+  "generated_on",
+  "forecast_days"
+ ],
+ "fields": [
+  {
+   "description": "Autonamed on this field - exactly one Price Forecast document per commodity, always. 'Creating' a new forecast for a commodity that already has one means loading and updating this existing document, never inserting a second one.",
+   "fieldname": "commodity",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Commodity",
+   "options": "Commodity",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "generated_on",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Generated On"
+  },
+  {
+   "fieldname": "forecast_days",
+   "fieldtype": "Table",
+   "label": "Forecast Days",
+   "options": "Price Forecast Day"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-12 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Price Forecast",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "delete": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin",
+   "share": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -39,6 +39,7 @@ def _setup():
 	ensure_email_templates()
 	ensure_seed_admin()
 	ensure_demo_users()
+	ensure_price_suggestion_settings()
 	frappe.db.commit()
 
 
@@ -224,6 +225,25 @@ def ensure_demo_users():
 			"verification_status",
 			"Approved",
 		)
+
+
+def ensure_price_suggestion_settings():
+	"""Seed Price Suggestion Settings defaults once. Never overwrites an already-configured
+	site — same idempotency rule as ensure_email_templates: if an admin already saved a
+	threshold, bench migrate must not reset it."""
+	existing = frappe.db.get_single_value(
+		"Price Suggestion Settings", "direct_suggestion_mape_threshold"
+	)
+	if existing is not None:
+		return
+
+	doc = frappe.get_single("Price Suggestion Settings")
+	doc.direct_suggestion_mape_threshold = 10
+	doc.guidance_mape_threshold = 25
+	doc.min_sample_size = 20
+	doc.interval_recalibration_factor = 1.5
+	doc.forecast_horizon_days = 30
+	doc.save(ignore_permissions=True)
 
 
 def _ensure_demo_profile(user: str, doctype: str, fields: dict):

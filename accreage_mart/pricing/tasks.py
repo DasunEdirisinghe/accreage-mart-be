@@ -21,26 +21,40 @@ MAX_LOOKBACK_DAYS = 90
 def ingest_daily_prices():
 	"""Catches up every date from the latest one actually present in Commodity Price Record
 	(not from Price Ingestion Log, which is empty on day one) through yesterday. A failure on
-	one date never aborts the rest of the run. Always enqueues the forecast refresh at the end,
-	success or partial failure.
+	one date never aborts the rest of the run, and a failure in the ingestion machinery itself
+	(e.g. the index fetch raising something other than the plain network error it already
+	handles) never prevents the forecast refresh from being enqueued - it always runs against
+	whatever data currently exists, success or total ingestion failure.
 	"""
-	today = frappe.utils.getdate()
-	start_date = _next_date_to_attempt(today)
-	end_date = today - datetime.timedelta(days=1)
-
-	if start_date <= end_date:
-		real_index = fetch_real_pdf_index()
-		session = requests.Session()
-
-		current = start_date
-		while current <= end_date:
-			_ingest_one_date(current, real_index, session)
-			current += datetime.timedelta(days=1)
+	try:
+		_run_ingestion()
+	except Exception as e:
+		frappe.log_error(
+			title="Price ingestion: total failure",
+			message=f"ingest_daily_prices aborted unexpectedly: {e}",
+		)
 
 	frappe.enqueue(
 		"accreage_mart.pricing.tasks.refresh_price_forecasts",
 		queue="long",
 	)
+
+
+def _run_ingestion():
+	today = frappe.utils.getdate()
+	start_date = _next_date_to_attempt(today)
+	end_date = today - datetime.timedelta(days=1)
+
+	if start_date > end_date:
+		return
+
+	real_index = fetch_real_pdf_index()
+	session = requests.Session()
+
+	current = start_date
+	while current <= end_date:
+		_ingest_one_date(current, real_index, session)
+		current += datetime.timedelta(days=1)
 
 
 def _next_date_to_attempt(today: datetime.date, max_date=None) -> datetime.date:
@@ -59,8 +73,18 @@ def _next_date_to_attempt(today: datetime.date, max_date=None) -> datetime.date:
 def _ingest_one_date(d: datetime.date, real_index: dict, session: requests.Session):
 	result = download_latest_pdf(d, session=session, real_index=real_index)
 
-	if result["status"] in ("not_found", "failed"):
-		_log(d, result["status"], 0, result["detail"])
+	if result["status"] == "not_found":
+		# Expected, normal outcome (HARTI simply didn't publish that day) - logged to Price
+		# Ingestion Log for the record, but not alarming enough for the Error Log list.
+		_log(d, "not_found", 0, result["detail"])
+		return
+
+	if result["status"] == "failed":
+		frappe.log_error(
+			title="Price ingestion: download failure",
+			message=f"date={d.isoformat()}: {result['detail']}",
+		)
+		_log(d, "failed", 0, result["detail"])
 		return
 
 	try:
@@ -133,9 +157,24 @@ def _log(d: datetime.date, status: str, commodities_updated_count: int, detail: 
 	frappe.db.commit()
 
 
-def refresh_price_forecasts():
-	"""Stub - implemented by Story 3.7 (close out realized predictions, rescore rolling MAPE,
-	refit Prophet and regenerate the 30-day forecast, per commodity). ingest_daily_prices()
-	already enqueues this by name so the orchestration wiring is correct and tested now,
-	before the real logic lands."""
-	pass
+def refresh_price_forecasts(commodities=None):
+	"""Runs the close-out/rescore/regenerate sequence (accreage_mart.pricing.forecasting) for
+	every active commodity. One commodity's failure is logged via frappe.log_error and
+	skipped - it never blocks the rest.
+
+	commodities is normally looked up from the DB (every active Commodity); tests may pass an
+	explicit list instead, so a test run never touches real commodities' forecast/accuracy
+	data (same pattern as Story 3.6's bootstrap_all)."""
+	from accreage_mart.pricing.forecasting import refresh_commodity_forecast
+
+	if commodities is None:
+		commodities = frappe.get_all("Commodity", filters={"is_active": 1}, pluck="name")
+
+	for commodity in commodities:
+		try:
+			refresh_commodity_forecast(commodity)
+		except Exception as e:
+			frappe.log_error(
+				title="Price forecast refresh failure",
+				message=f"commodity={commodity}: {e}",
+			)
