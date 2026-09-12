@@ -6,10 +6,7 @@ built-in doctype, editable from the desk without a code change) via
 ``send_templated_email`` and drops the rendered subject/body into this shell.
 """
 
-import re
-
 import frappe
-from frappe.utils import strip_html
 
 GREEN = "#1b5e3d"
 AMBER = "#f59e0b"
@@ -57,15 +54,18 @@ def send_branded_email(
 	footer_note: str = "",
 ):
 	html = _render_html(heading, body_html, cta_label, cta_url, footer_note)
-	text = _render_text(heading, body_html, cta_label, cta_url, footer_note)
 
+	# NOTE: do not also pass `content=` here — frappe.sendmail() does
+	# `message = content or message`, so `content` REPLACES the HTML message
+	# rather than supplying a text/plain alternative alongside it. Frappe's
+	# QueueBuilder already derives a plain-text part from `message` on its own
+	# (frappe.utils.html_to_plain_text) when no explicit text_content is given.
 	frappe.sendmail(
 		recipients=[recipient],
 		subject=subject,
 		message=html,
 		as_markdown=False,
 		now=True,
-		content=text,
 	)
 
 
@@ -75,11 +75,6 @@ def smtp_configured() -> bool:
 	return bool(
 		frappe.db.get_value("Email Account", {"default_outgoing": 1, "enable_outgoing": 1}, "name")
 	)
-
-
-def _html_to_text(html: str) -> str:
-	html = re.sub(r"(?i)</p>|<br\s*/?>", "\n", html or "")
-	return strip_html(html).strip()
 
 
 def _render_html(heading, body_html, cta_label, cta_url, footer_note) -> str:
@@ -127,13 +122,3 @@ def _render_html(heading, body_html, cta_label, cta_url, footer_note) -> str:
     </tr>
   </table>
 </div>"""
-
-
-def _render_text(heading, body_html, cta_label, cta_url, footer_note) -> str:
-	parts = [heading, "", _html_to_text(body_html)]
-	if cta_url:
-		parts += ["", f"{cta_label}: {cta_url}"]
-	if footer_note:
-		parts += ["", footer_note]
-	parts += ["", "Accreage Mart — Sri Lanka's agricultural B2B marketplace"]
-	return "\n".join(parts)

@@ -55,9 +55,11 @@ class TestEmailTemplates(FrappeTestCase):
 		self.assertIn("https://example.com/set-password?key=abc", kwargs["message"])
 		self.assertIn("Choose a new password", kwargs["message"])
 		self.assertIn("This link expires in 1 hour.", kwargs["message"])
-		# Plain-text alternative also carries the rendered content, not raw HTML tags.
-		self.assertIn("Jane Doe", kwargs["content"])
-		self.assertNotIn("<p>", kwargs["content"])
+		# Regression: `content=` would silently replace the HTML `message` outright
+		# (frappe.sendmail does `message = content or message`), which is exactly
+		# the bug that made every branded email send as plain text. Must never
+		# be passed alongside `message`.
+		self.assertNotIn("content", kwargs)
 
 	def test_send_templated_email_without_cta_omits_the_button(self):
 		ensure_email_templates()
