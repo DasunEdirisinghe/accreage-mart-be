@@ -1,0 +1,171 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:commodity_name",
+ "creation": "2026-09-12 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "commodity_name",
+  "harti_category",
+  "market",
+  "unit",
+  "is_active",
+  "name_aliases",
+  "accuracy_section",
+  "mape_1_7d",
+  "mape_8_14d",
+  "mape_15_30d",
+  "column_break_accuracy",
+  "sample_size_1_7d",
+  "sample_size_8_14d",
+  "sample_size_15_30d",
+  "last_evaluated_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "commodity_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Commodity Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Raw HARTI grouping (e.g. \"Rice\", \"Low country Vegetable\") - informational only. Not read by any gating/suggestion logic; the marketplace-facing taxonomy lives on the Category doctype instead.",
+   "fieldname": "harti_category",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "HARTI Category"
+  },
+  {
+   "fieldname": "market",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Market",
+   "options": "Pettah\nPeliyagoda",
+   "reqd": 1
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Data",
+   "label": "Unit"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "description": "Item-name variants the parser has seen for this commodity across different PDF renders, used to normalize extraction (one per line).",
+   "fieldname": "name_aliases",
+   "fieldtype": "Small Text",
+   "label": "Name Aliases"
+  },
+  {
+   "fieldname": "accuracy_section",
+   "fieldtype": "Section Break",
+   "label": "Forecast Accuracy (system-maintained)"
+  },
+  {
+   "description": "Rolling median MAPE, 1-7 day horizon. Written by the daily forecast job / bootstrap CV - never edited by hand.",
+   "fieldname": "mape_1_7d",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "MAPE 1-7d (%)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "description": "Rolling median MAPE, 8-14 day horizon.",
+   "fieldname": "mape_8_14d",
+   "fieldtype": "Float",
+   "label": "MAPE 8-14d (%)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "description": "Rolling median MAPE, 15-30 day horizon.",
+   "fieldname": "mape_15_30d",
+   "fieldtype": "Float",
+   "label": "MAPE 15-30d (%)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_accuracy",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Number of realized predictions the 1-7d MAPE is based on. Below Price Suggestion Settings.min_sample_size, that bucket's score is not trusted for gating.",
+   "fieldname": "sample_size_1_7d",
+   "fieldtype": "Int",
+   "label": "Sample Size 1-7d",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "sample_size_8_14d",
+   "fieldtype": "Int",
+   "label": "Sample Size 8-14d",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "sample_size_15_30d",
+   "fieldtype": "Int",
+   "label": "Sample Size 15-30d",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_evaluated_on",
+   "fieldtype": "Date",
+   "label": "Last Evaluated On",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-12 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Commodity",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
