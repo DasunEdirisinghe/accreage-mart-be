@@ -17,7 +17,8 @@ account_hint              guest             is an address a pending account (1.8
 request_password_reset    guest             generic response, rate-limited (1.8)
 resend_activation         guest             only for status "invited" (Story 1.8)
 create_staff              Admin / Administrator   emails an invite (Story 1.11)
-list_accounts             Admin / Administrator   real staff/member rows (Story 1.14)
+list_accounts             Staff / Admin     real staff/member rows (Story 1.14; Staff read
+                                             access added Story 2.3 for the dashboard stats)
 set_account_status        Admin / Administrator   active/suspended/deactivated (Story 1.14)
 account_applications      Staff / Admin     buyer/seller applications, any status (Story 2.2;
                                              was pending_accounts, Story 1.13 — now returns
@@ -219,12 +220,14 @@ def _find_application(email: str) -> tuple[str, str]:
 
 @frappe.whitelist()
 def list_accounts(kind: str = "staff") -> list[dict]:
-	"""Real account rows for the admin tables. Admin/Administrator only.
+	"""Real account rows for the admin tables and the shared /admin dashboard
+	stat cards. Staff/Admin only (the /admin/staff and /admin/users *pages* stay
+	Admin-only via the route guard — this is just the read).
 
 	kind="staff"   -> users holding Staff or Admin
 	kind="members" -> users holding Buyer or Seller, with their profile
 	"""
-	registration.require_admin()
+	registration.require_staff()
 
 	wanted = {"Staff", "Admin"} if kind == "staff" else {"Buyer", "Seller"}
 	rows = []

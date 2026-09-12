@@ -83,3 +83,15 @@ class TestApprovals(FrappeTestCase):
 				reject_account(SELLER, "no")
 		finally:
 			frappe.set_user("Administrator")
+
+	def test_demo_accounts_are_approved_not_pending(self):
+		# Regression: ensure_demo_users() sets verified=1 directly (bypassing
+		# verify_account), so it must also set verification_status explicitly —
+		# otherwise the demo seller/buyer show up as "pending" on /admin/accounts.
+		from accreage_mart.setup.install import ensure_demo_users
+
+		ensure_demo_users()
+		rows = {row["email"]: row for row in account_applications()}
+		for email in ("buyer@demo.accreagemart.lk", "seller@demo.accreagemart.lk"):
+			if email in rows:  # only present when developer_mode is on
+				self.assertEqual(rows[email]["verificationStatus"], "approved")

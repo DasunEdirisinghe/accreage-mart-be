@@ -198,6 +198,7 @@ def ensure_demo_users():
 			"location": "Colombo 03",
 			"district": "Colombo",
 			"verified": 1,
+			"verification_status": "Approved",
 		},
 	)
 	_ensure_demo_profile(
@@ -210,8 +211,19 @@ def ensure_demo_users():
 			"description": "Demo seller account.",
 			"trust_score": 4.5,
 			"verified": 1,
+			"verification_status": "Approved",
 		},
 	)
+
+	# Self-heal: demo profiles created before verification_status existed (or by any
+	# other path that sets verified=1 directly) should read "Approved", not "Pending".
+	for doctype in ("Buyer Profile", "Seller Profile"):
+		frappe.db.set_value(
+			doctype,
+			{"verified": 1, "verification_status": ["!=", "Approved"]},
+			"verification_status",
+			"Approved",
+		)
 
 
 def _ensure_demo_profile(user: str, doctype: str, fields: dict):

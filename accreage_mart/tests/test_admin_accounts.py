@@ -44,11 +44,21 @@ class TestAdminAccounts(FrappeTestCase):
 		self.assertEqual(buyer_row["role"], "buyer")
 		self.assertEqual(buyer_row["businessName"], "List Hotels")
 
-	def test_list_accounts_requires_admin(self):
+	def test_list_accounts_requires_staff_or_admin(self):
 		frappe.set_user("Guest")
 		try:
 			with self.assertRaises(frappe.PermissionError):
 				list_accounts("staff")
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_list_accounts_allows_staff_read(self):
+		# Story 2.3: the shared /admin dashboard stat cards call this as Staff too,
+		# not just Admin — read access only, set_account_status stays Admin-only.
+		frappe.set_user(STAFF)
+		try:
+			emails = [r["email"] for r in list_accounts("members")]
+			self.assertIn(BUYER, emails)
 		finally:
 			frappe.set_user("Administrator")
 
