@@ -167,6 +167,12 @@ after_migrate = "accreage_mart.setup.install.after_migrate"
 # 	],
 # }
 
+scheduler_events = {
+	"daily": [
+		"accreage_mart.pricing.tasks.ingest_daily_prices",
+	],
+}
+
 # Testing
 # -------
 
