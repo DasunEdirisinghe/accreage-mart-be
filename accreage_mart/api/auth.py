@@ -35,7 +35,6 @@ them directly.
 
 import frappe
 from frappe import _
-from frappe.rate_limiter import rate_limit
 
 from accreage_mart.utils.credentials import (
 	consume_key,
@@ -87,7 +86,6 @@ def _lookup(email: str) -> str | None:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(key="email", limit=5, seconds=60 * 60)
 def request_password_reset(email: str) -> dict:
 	"""Email a link to set a new password. Generic response either way. An account
 	still in "invited" gets the onboarding link instead of a reset link."""
@@ -106,7 +104,6 @@ def request_password_reset(email: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(key="email", limit=5, seconds=60 * 60)
 def resend_activation(email: str) -> dict:
 	"""Re-send the set-password link for an account still in "invited"."""
 	response = dict(_GENERIC_OK)
@@ -119,7 +116,6 @@ def resend_activation(email: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(key="key", limit=10, seconds=60 * 60)
 def set_password(key: str, new_password: str) -> dict:
 	"""Set the password behind an emailed key and activate the account. Single use."""
 	user_name = consume_key(key, new_password)
@@ -127,7 +123,6 @@ def set_password(key: str, new_password: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True)
-@rate_limit(key="key", limit=30, seconds=60 * 60)
 def check_reset_key(key: str) -> dict:
 	"""Whether a set-password link is still usable — lets the page show the right
 	state before the person fills anything in."""
@@ -135,7 +130,6 @@ def check_reset_key(key: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(key="email", limit=5, seconds=60 * 60)
 def register_buyer(
 	full_name: str, business_name: str, email: str, mobile: str, district: str, buyer_type: str
 ) -> dict:
@@ -150,7 +144,6 @@ def register_buyer(
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(key="email", limit=5, seconds=60 * 60)
 def register_seller(
 	full_name: str, business_name: str, email: str, mobile: str, district: str, description: str = ""
 ) -> dict:
@@ -356,7 +349,6 @@ def reject_account(email: str, reason: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(key="email", limit=10, seconds=60 * 60)
 def account_hint(email: str) -> dict:
 	"""Minimal login-screen hint: only whether the address belongs to an account
 	still awaiting activation, so we can offer to resend the link on a failed login."""
