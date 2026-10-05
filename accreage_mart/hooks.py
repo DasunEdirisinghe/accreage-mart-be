@@ -170,6 +170,7 @@ after_migrate = "accreage_mart.setup.install.after_migrate"
 scheduler_events = {
 	"daily": [
 		"accreage_mart.pricing.tasks.ingest_daily_prices",
+		"accreage_mart.utils.listing_images.delete_orphan_images",
 	],
 }
 

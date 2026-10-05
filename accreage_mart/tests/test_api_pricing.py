@@ -94,6 +94,14 @@ class TestApiPricing(FrappeTestCase):
 		finally:
 			frappe.delete_doc("Category", category.name, force=True, ignore_permissions=True)
 
+	def test_suggestion_says_what_the_prices_are_per(self):
+		result = get_price_suggestion(self.category_linked_name)
+		# nothing in the fixture names a unit, so it is the kg default
+		self.assertEqual(result["price_unit"], "kg")
+
+		frappe.db.set_value("Commodity", TEST_COMMODITY_GOOD, "unit", "Rs/Egg")
+		self.assertEqual(get_price_suggestion(self.category_linked_name)["price_unit"], "egg")
+
 	def test_get_price_history_and_forecast_returns_expected_shape(self):
 		result = get_price_history_and_forecast(TEST_COMMODITY_GOOD)
 		self.assertEqual(result["commodity_name"], TEST_COMMODITY_GOOD)

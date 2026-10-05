@@ -1,5 +1,9 @@
 """Shared fixtures for the Epic 04 listing tests."""
 
+import io
+import os
+import uuid
+
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
@@ -12,6 +16,7 @@ CATEGORY_TITLE = "ZZ Listing Test Category"
 TITLE = "ZZ Test Carrots"
 
 _created_auctions: list[str] = []
+_created_files: list[str] = []
 
 
 def make_seller(email: str, *, verified: bool = True) -> str:
@@ -28,6 +33,36 @@ def make_seller(email: str, *, verified: bool = True) -> str:
 		}
 	).insert(ignore_permissions=True)
 	return email
+
+
+def image_bytes(kind: str = "PNG", size: int = 8) -> bytes:
+	"""A small valid image with random pixels, so two calls never share content (Frappe reuses
+	the stored file for identical bytes)."""
+	from PIL import Image
+
+	image = Image.frombytes("RGB", (size, size), os.urandom(size * size * 3))
+	buffer = io.BytesIO()
+	image.save(buffer, kind)
+	return buffer.getvalue()
+
+
+def track_file(name: str) -> None:
+	_created_files.append(name)
+
+
+def make_image_file(owner: str) -> str:
+	"""A public, unattached image upload owned by ``owner``. Returns its URL."""
+	file = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": f"lst-zztest-{uuid.uuid4().hex[:8]}.png",
+			"content": image_bytes(),
+			"is_private": 0,
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.set_value("File", file.name, "owner", owner, update_modified=False)
+	track_file(file.name)
+	return file.file_url
 
 
 def make_category(title: str = CATEGORY_TITLE) -> str:
@@ -119,6 +154,10 @@ def purge(*emails: str) -> None:
 		frappe.db.delete("Listing Review", {"listing": name})
 	for name in listings:
 		frappe.delete_doc("Listing", name, force=True, ignore_permissions=True)
+	for name in _created_files:
+		if frappe.db.exists("File", name):
+			frappe.delete_doc("File", name, force=True, ignore_permissions=True)
+	_created_files.clear()
 	for name in _created_auctions:
 		frappe.db.delete("Auction", {"name": name})
 	_created_auctions.clear()

@@ -11,6 +11,7 @@ from accreage_mart.tests.listing_fixtures import (
 	future,
 	make_auction_listing,
 	make_category,
+	make_image_file,
 	make_listing,
 	make_seller,
 	purge,
@@ -56,6 +57,9 @@ class ApiListingsTestCase(FrappeTestCase):
 		set_status(listing.name, "Approved")
 		return listing, auction
 
+	def image_url(self, owner=SELLER_A):
+		return make_image_file(owner)
+
 	def create_args(self, **overrides):
 		args = {
 			"category": self.category,
@@ -66,7 +70,7 @@ class ApiListingsTestCase(FrappeTestCase):
 			"quantity_available": 500,
 			"district": "Kandy",
 			"location": "Kandy market",
-			"images": [{"image": "/files/a.png"}],
+			"images": [{"image": self.image_url()}],
 			"price_per_unit": 120,
 		}
 		args.update(overrides)
@@ -85,17 +89,18 @@ class TestCreateListing(ApiListingsTestCase):
 		self.assertEqual(doc.images[0].is_cover, 1)
 
 	def test_only_a_verified_seller_can_create(self):
+		args = self.create_args()
 		frappe.set_user("Guest")
 		with self.assertRaises(frappe.AuthenticationError):
-			api.create_listing(**self.create_args())
+			api.create_listing(**args)
 		frappe.set_user("Administrator")
 		with self.assertRaises(frappe.PermissionError):
-			api.create_listing(**self.create_args())  # staff/admin have no seller profile
+			api.create_listing(**args)  # staff/admin have no seller profile
 		make_seller("listing.unverified@x.lk", verified=False)
 		self.addCleanup(purge, "listing.unverified@x.lk")
 		frappe.set_user("listing.unverified@x.lk")
 		with self.assertRaises(frappe.PermissionError):
-			api.create_listing(**self.create_args())
+			api.create_listing(**args)
 
 	def test_auction_listing_needs_the_acknowledgement(self):
 		self.as_seller()
@@ -199,12 +204,11 @@ class TestUpdateListing(ApiListingsTestCase):
 
 	def test_images_are_replaced_as_a_set(self):
 		listing = self.published()
+		first, second = self.image_url(), self.image_url()
 		self.as_seller()
-		api.update_listing(
-			listing.name, {"images": [{"image": "/files/x.png"}, {"image": "/files/y.png", "is_cover": 1}]}
-		)
+		api.update_listing(listing.name, {"images": [{"image": first}, {"image": second, "is_cover": 1}]})
 		rows = frappe.get_doc("Listing", listing.name).images
-		self.assertEqual([(r.image, r.is_cover) for r in rows], [("/files/x.png", 0), ("/files/y.png", 1)])
+		self.assertEqual([(r.image, r.is_cover) for r in rows], [(first, 0), (second, 1)])
 
 	def test_field_kinds_must_match_the_selling_type(self):
 		direct = self.published()

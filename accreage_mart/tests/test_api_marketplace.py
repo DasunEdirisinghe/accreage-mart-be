@@ -365,3 +365,18 @@ class TestPublicSeller(MarketplaceTestCase):
 		self.assertNotEqual(self.pid, lu.public_seller_id(SELLER_B))
 		self.assertEqual(lu.seller_profile_from_public_id(self.pid), SELLER_A)
 		self.assertIsNone(lu.seller_profile_from_public_id(""))
+
+
+class TestListingCategories(MarketplaceTestCase):
+	def test_guests_get_name_title_and_area_only(self):
+		frappe.set_user("Guest")
+		rows = api.list_listing_categories()
+		row = next(r for r in rows if r["name"] == self.category)
+		self.assertEqual(set(row), {"name", "title", "area"})
+		self.assertEqual((row["title"], row["area"]), ("ZZ Listing Test Category", "Vegetables"))
+
+	def test_the_list_is_sorted_by_title(self):
+		make_category("ZZ Listing Test B")
+		make_category("ZZ Listing Test A")
+		titles = [r["title"] for r in api.list_listing_categories()]
+		self.assertLess(titles.index("ZZ Listing Test A"), titles.index("ZZ Listing Test B"))

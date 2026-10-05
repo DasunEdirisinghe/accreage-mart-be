@@ -33,6 +33,7 @@ get_commodity                    Staff/Admin       one commodity's full fields +
 import frappe
 from frappe import _
 
+from accreage_mart.pricing.units import price_unit_label
 from accreage_mart.utils import registration
 
 CATEGORY_AREAS = {"Fruits", "Vegetables", "Fertilizer", "Tools", "Rice", "Other"}
@@ -79,8 +80,9 @@ def get_price_suggestion(category: str) -> dict:
 	link (or an unknown category name) - never an error, since this is called from a seller's
 	listing form.
 
-	Otherwise: {"available": True, "commodity_name", "tiers": {"near", "mid", "long"},
-	"forecast_days": [...]}. Each tier is "direct" | "range" | "unavailable".
+	Otherwise: {"available": True, "commodity_name", "price_unit", "tiers": {"near", "mid",
+	"long"}, "forecast_days": [...]}. Each tier is "direct" | "range" | "unavailable".
+	``price_unit`` ("kg", "egg", "fruit"...) is what the forecast prices are per.
 	"""
 	_require_authenticated()
 
@@ -94,6 +96,7 @@ def get_price_suggestion(category: str) -> dict:
 		[
 			"mape_1_7d", "mape_8_14d", "mape_15_30d",
 			"sample_size_1_7d", "sample_size_8_14d", "sample_size_15_30d",
+			"unit", "harti_category",
 		],
 		as_dict=True,
 	)
@@ -108,6 +111,7 @@ def get_price_suggestion(category: str) -> dict:
 	return {
 		"available": True,
 		"commodity_name": commodity_name,
+		"price_unit": price_unit_label(commodity.unit, commodity_name, commodity.harti_category),
 		"tiers": tiers,
 		"forecast_days": _forecast_days_for(commodity_name),
 	}

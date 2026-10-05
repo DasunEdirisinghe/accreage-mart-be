@@ -34,6 +34,7 @@ from frappe import _
 from frappe.utils import cint, flt, get_datetime, now_datetime
 
 from accreage_mart.utils import listing as lu
+from accreage_mart.utils.listing_images import check_image_rows
 from accreage_mart.utils.listing_notify import notify_low_stock
 from accreage_mart.utils.listing_snapshot import suggestion_snapshot
 
@@ -186,6 +187,8 @@ def _create(profile: str, values: dict, auction_terms: dict, acknowledged) -> di
 	elif any(auction_terms.values()):
 		frappe.throw(_("Auction terms are only for Auction listings."))
 
+	check_image_rows(values.get("images") or [], profile)
+
 	savepoint = "create_listing"
 	frappe.db.savepoint(savepoint)
 	try:
@@ -313,8 +316,10 @@ def update_listing(name: str, values) -> dict:
 		if field in values:
 			listing.set(field, values[field])
 	if "images" in values:
+		rows = _image_rows(values["images"])
+		check_image_rows(rows, profile, listing)
 		listing.set("images", [])
-		for row in _image_rows(values["images"]):
+		for row in rows:
 			listing.append("images", row)
 
 	# New terms on a Pending/published listing go (back) to review; on a Rejected one they wait for

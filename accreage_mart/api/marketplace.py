@@ -13,6 +13,8 @@ get_listing            anyone (guest)    one listing; what you see depends on wh
                                           the listing's status (see ``get_listing``)
 get_public_seller      anyone (guest)    a seller's public card by opaque public id
 list_my_listings       verified seller   the caller's own listings, with per-tab counts
+list_listing_categories  anyone (guest)  Category name / title / area for the listing form and the
+                                          marketplace filter (never the linked commodity)
 =====================  ================  =====================================================
 
 The Seller Profile name is the seller's email, so every public payload carries an opaque
@@ -388,6 +390,15 @@ def get_listing(name: str) -> dict:
 	else:
 		response["message"] = _(_PUBLIC_UNAVAILABLE[availability])
 	return response
+
+
+# -- categories ---------------------------------------------------------------------------------
+
+
+@frappe.whitelist(allow_guest=True)
+def list_listing_categories() -> list[dict]:
+	"""Every Category, for the listing form's searchable dropdown and the marketplace filter."""
+	return frappe.get_all("Category", fields=["name", "title", "area"], order_by="title asc")
 
 
 # -- a seller's public card ---------------------------------------------------------------------
