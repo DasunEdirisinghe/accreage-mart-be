@@ -13,6 +13,8 @@ get_listing            anyone (guest)    one listing; what you see depends on wh
                                           the listing's status (see ``get_listing``)
 get_public_seller      anyone (guest)    a seller's public card by opaque public id
 list_my_listings       verified seller   the caller's own listings, with per-tab counts
+get_listing_history    owner             the staff decisions and the seller's own resubmissions
+                                          on one of their listings, newest first
 list_listing_categories  anyone (guest)  Category name / title / area for the listing form and the
                                           marketplace filter (never the linked commodity)
 =====================  ================  =====================================================
@@ -401,6 +403,34 @@ def list_listing_categories() -> list[dict]:
 	return frappe.get_all("Category", fields=["name", "title", "area"], order_by="title asc")
 
 
+# -- a listing's decision history, for its owner ------------------------------------------------
+
+
+@frappe.whitelist()
+def get_listing_history(name: str) -> list[dict]:
+	"""What happened to one of the caller's listings: staff approvals, rejections, suspensions
+	and the seller's own resubmissions, newest first. Staff identities are not exposed."""
+	profile = lu.require_seller()
+	if not name or frappe.db.get_value("Listing", name, "seller") != profile:
+		frappe.throw(_("Listing not found."), frappe.DoesNotExistError)
+	rows = frappe.get_all(
+		"Listing Review",
+		filters={"listing": name},
+		fields=["action", "reason", "seller_note", "reviewed_on"],
+		order_by="reviewed_on desc, creation desc",
+	)
+	return [
+		{
+			"action": row.action,
+			"reason": row.reason,
+			"seller_note": row.seller_note,
+			"reviewed_on": row.reviewed_on,
+			"by": "you" if row.action == "Resubmitted" else "staff",
+		}
+		for row in rows
+	]
+
+
 # -- a seller's public card ---------------------------------------------------------------------
 
 
@@ -438,13 +468,20 @@ def get_public_seller(public_id: str) -> dict:
 def list_my_listings(
 	tab: str | None = None,
 	search: str | None = None,
+	selling_type: str | None = None,
+	exclude_archived: int = 0,
 	page: int = 1,
 	page_size: int = DEFAULT_PAGE_SIZE,
 ) -> dict:
-	"""The caller's listings, newest change first, with a count per tab for the status tabs."""
+	"""The caller's listings, newest change first, with a count per tab for the status tabs.
+
+	``selling_type`` and ``exclude_archived`` narrow the list (the inventory page wants Direct
+	listings that are not archived); the tab counts always cover all of the seller's listings."""
 	profile = lu.require_seller()
 	if tab and tab not in TABS:
 		frappe.throw(_("Unknown tab."))
+	if selling_type and selling_type not in lu.SELLING_TYPES:
+		frappe.throw(_("Unknown selling type."))
 	page, page_size = page_args(page, page_size)
 
 	counts = {key: 0 for key in TABS}
@@ -460,6 +497,11 @@ def list_my_listings(
 	if tab:
 		where.append("l.status = %(status)s")
 		params["status"] = TABS[tab]
+	if selling_type:
+		where.append("l.selling_type = %(selling_type)s")
+		params["selling_type"] = selling_type
+	if cint(exclude_archived):
+		where.append("l.status != 'Archived'")
 	if search and search.strip():
 		where.append("(l.title like %(search)s or l.description like %(search)s)")
 		params["search"] = like_pattern(search.strip())

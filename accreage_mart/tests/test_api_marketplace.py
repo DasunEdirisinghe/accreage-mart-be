@@ -380,3 +380,63 @@ class TestListingCategories(MarketplaceTestCase):
 		make_category("ZZ Listing Test A")
 		titles = [r["title"] for r in api.list_listing_categories()]
 		self.assertLess(titles.index("ZZ Listing Test A"), titles.index("ZZ Listing Test B"))
+
+
+class TestMyListingsFilters(MarketplaceTestCase):
+	def test_filters_by_selling_type_and_hides_archived(self):
+		direct = self.live(title="ZZ Test Direct")
+		archived = self.live(title="ZZ Test Gone", status="Archived")
+		auction, _ = make_auction_listing(self.seller, self.category)
+		frappe.set_user(SELLER_A)
+		names = lambda **kw: {i["name"] for i in api.list_my_listings(**kw)["items"]}  # noqa: E731
+		self.assertEqual(names(selling_type="Direct"), {direct.name, archived.name})
+		self.assertEqual(names(selling_type="Direct", exclude_archived=1), {direct.name})
+		self.assertEqual(names(selling_type="Auction"), {auction.name})
+		self.assertEqual(names(exclude_archived=1), {direct.name, auction.name})
+		with self.assertRaises(frappe.ValidationError):
+			api.list_my_listings(selling_type="Barter")
+
+	def test_tab_counts_ignore_the_filters(self):
+		self.live(status="Archived")
+		self.live()
+		frappe.set_user(SELLER_A)
+		result = api.list_my_listings(selling_type="Direct", exclude_archived=1)
+		self.assertEqual((result["total"], result["counts"]["archived"], result["counts"]["live"]), (1, 1, 1))
+
+
+class TestListingHistory(MarketplaceTestCase):
+	def _review(self, listing, action, **values):
+		with lu.system_write():
+			frappe.get_doc(
+				{"doctype": "Listing Review", "listing": listing.name, "action": action, **values}
+			).insert(ignore_permissions=True)
+
+	def test_the_owner_sees_decisions_newest_first_without_staff_identities(self):
+		listing = self.live(status="Pending Approval")
+		self._review(listing, "Rejected", reason="Photos are blurry.")
+		self._review(listing, "Resubmitted", seller_note="New photos.")
+		frappe.set_user(SELLER_A)
+		history = api.get_listing_history(listing.name)
+		self.assertEqual([h["action"] for h in history], ["Resubmitted", "Rejected"])
+		self.assertEqual([h["by"] for h in history], ["you", "staff"])
+		self.assertEqual(history[1]["reason"], "Photos are blurry.")
+		self.assertEqual(history[0]["seller_note"], "New photos.")
+		self.assertNotIn("reviewer", history[0])
+		self.assertNotIn("Administrator", json.dumps(history, default=str))
+
+	def test_a_listing_with_no_history_gives_an_empty_list(self):
+		listing = self.live()
+		frappe.set_user(SELLER_A)
+		self.assertEqual(api.get_listing_history(listing.name), [])
+
+	def test_another_sellers_listing_is_not_found(self):
+		listing = self.live()
+		frappe.set_user(SELLER_B)
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.get_listing_history(listing.name)
+		with self.assertRaises(frappe.DoesNotExistError):
+			api.get_listing_history("LST-99999999")
+
+	def test_only_a_verified_seller_may_ask(self):
+		with self.assertRaises(frappe.PermissionError):
+			api.get_listing_history("anything")
