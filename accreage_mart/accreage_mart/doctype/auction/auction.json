@@ -1,0 +1,103 @@
+{
+ "actions": [],
+ "autoname": "format:AUC-{#####}",
+ "creation": "2026-10-05 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "min_bid",
+  "start_time",
+  "end_time",
+  "duration_hours",
+  "ai_fair_value"
+ ],
+ "fields": [
+  {
+   "description": "LKR per unit; the winner takes the whole lot.",
+   "fieldname": "min_bid",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Minimum Bid (per unit)",
+   "reqd": 1
+  },
+  {
+   "description": "At least 24 hours after the listing is submitted.",
+   "fieldname": "start_time",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Start Time",
+   "reqd": 1
+  },
+  {
+   "description": "Between 6 hours and 48 hours after the start.",
+   "fieldname": "end_time",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "End Time",
+   "reqd": 1
+  },
+  {
+   "fieldname": "duration_hours",
+   "fieldtype": "Float",
+   "label": "Duration (hours)",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "description": "Snapshot at submission, shown to staff.",
+   "fieldname": "ai_fair_value",
+   "fieldtype": "Currency",
+   "label": "AI Fair Value",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-05 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Auction",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Seller",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

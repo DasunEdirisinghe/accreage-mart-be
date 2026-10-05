@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "autoname": "format:LRV-{#####}",
+ "creation": "2026-10-05 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "listing",
+  "action",
+  "reason",
+  "seller_note",
+  "reviewer",
+  "reviewed_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "listing",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Listing",
+   "options": "Listing",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Action",
+   "options": "Approved\nRejected\nSuspended\nResubmitted",
+   "reqd": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "seller_note",
+   "fieldtype": "Small Text",
+   "label": "Seller Note"
+  },
+  {
+   "description": "Staff member for approve/reject/suspend; the seller for a resubmission.",
+   "fieldname": "reviewer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Actor",
+   "options": "User"
+  },
+  {
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "On"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-05 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Listing Review",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff"
+  },
+  {
+   "read": 1,
+   "role": "Seller"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

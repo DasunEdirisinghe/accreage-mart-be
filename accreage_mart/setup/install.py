@@ -111,6 +111,42 @@ EMAIL_TEMPLATES = {
 			"in and get started.</p>"
 		),
 	},
+	"listing_low_stock": {
+		"subject": "Low stock on one of your listings",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Your listing <strong>{{ title }}</strong> is running low: {{ quantity }} {{ unit }} left, "
+			"below your alert level of {{ low_stock_level }} {{ unit }}.</p>"
+			"<p>Update the stock when you have more, or hide the listing if you can't fill new orders.</p>"
+		),
+	},
+	"listing_approved": {
+		"subject": "Your listing is now live",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Your listing <strong>{{ title }}</strong> was approved and is now live on the "
+			"marketplace.</p>"
+		),
+	},
+	"listing_rejected": {
+		"subject": "Your listing needs changes",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Your listing <strong>{{ title }}</strong> was not approved.</p>"
+			"<p><strong>Reason:</strong> {{ reason }}</p>"
+			"<p>You can edit the listing and resubmit it for review.</p>"
+		),
+	},
+	"listing_suspended": {
+		"subject": "Your listing has been suspended",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Your listing <strong>{{ title }}</strong> has been suspended and is no longer "
+			"visible on the marketplace.</p>"
+			"<p><strong>Reason:</strong> {{ reason }}</p>"
+			"<p>Please contact staff if you have questions.</p>"
+		),
+	},
 	"account_rejected": {
 		"subject": "Update on your Accreage Mart application",
 		"response": (

@@ -254,3 +254,16 @@ before_tests = "accreage_mart.setup.install.before_tests"
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
+# Every platform user also carries System Manager, so ownership and system-field rules for the
+# listing DocTypes are enforced here and in the controllers (see accreage_mart/utils/listing.py).
+has_permission = {
+	"Listing": "accreage_mart.utils.listing.listing_has_permission",
+	"Auction": "accreage_mart.utils.listing.auction_has_permission",
+	"Listing Review": "accreage_mart.utils.listing.review_has_permission",
+}
+
+permission_query_conditions = {
+	"Listing": "accreage_mart.utils.listing.listing_query_conditions",
+	"Auction": "accreage_mart.utils.listing.auction_query_conditions",
+	"Listing Review": "accreage_mart.utils.listing.review_query_conditions",
+}

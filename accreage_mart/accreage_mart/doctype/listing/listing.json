@@ -1,0 +1,314 @@
+{
+ "actions": [],
+ "autoname": "format:LST-{#####}",
+ "creation": "2026-10-05 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "seller",
+  "category",
+  "selling_type",
+  "status",
+  "column_break_main",
+  "description",
+  "unit",
+  "quantity_available",
+  "direct_section",
+  "price_per_unit",
+  "min_order_qty",
+  "low_stock_level",
+  "auction_section",
+  "auction",
+  "location_section",
+  "district",
+  "location",
+  "latitude",
+  "longitude",
+  "quality_section",
+  "organic",
+  "certification",
+  "images_section",
+  "images",
+  "review_section",
+  "resubmission_note",
+  "status_reason",
+  "submitted_on",
+  "reviewed_by",
+  "reviewed_on",
+  "ai_suggested_min",
+  "ai_suggested_max"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "length": 140,
+   "reqd": 1
+  },
+  {
+   "fieldname": "seller",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Seller",
+   "options": "Seller Profile",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Category",
+   "options": "Category",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "selling_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Selling Type",
+   "options": "Direct\nAuction",
+   "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "default": "Pending Approval",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending Approval\nApproved\nRejected\nHidden\nSuspended\nArchived",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Text",
+   "label": "Description",
+   "reqd": 1
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Select",
+   "label": "Unit",
+   "options": "kg\nnut\nbundle\npiece\nbag\nlitre\ndozen",
+   "reqd": 1
+  },
+  {
+   "description": "For an Auction this is the whole lot.",
+   "fieldname": "quantity_available",
+   "fieldtype": "Float",
+   "label": "Quantity Available",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.selling_type=='Direct'",
+   "fieldname": "direct_section",
+   "fieldtype": "Section Break",
+   "label": "Direct Sale"
+  },
+  {
+   "fieldname": "price_per_unit",
+   "fieldtype": "Currency",
+   "label": "Price per Unit (LKR)",
+   "mandatory_depends_on": "eval:doc.selling_type=='Direct'"
+  },
+  {
+   "default": "1",
+   "fieldname": "min_order_qty",
+   "fieldtype": "Float",
+   "label": "Minimum Order Quantity"
+  },
+  {
+   "description": "Optional. The seller is alerted when stock drops below this.",
+   "fieldname": "low_stock_level",
+   "fieldtype": "Float",
+   "label": "Low Stock Level"
+  },
+  {
+   "depends_on": "eval:doc.selling_type=='Auction'",
+   "fieldname": "auction_section",
+   "fieldtype": "Section Break",
+   "label": "Auction"
+  },
+  {
+   "fieldname": "auction",
+   "fieldtype": "Link",
+   "label": "Auction",
+   "options": "Auction",
+   "read_only": 1
+  },
+  {
+   "fieldname": "location_section",
+   "fieldtype": "Section Break",
+   "label": "Location"
+  },
+  {
+   "fieldname": "district",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "District",
+   "options": "\nColombo\nGampaha\nKalutara\nKandy\nMatale\nNuwara Eliya\nGalle\nMatara\nHambantota\nJaffna\nKilinochchi\nMannar\nVavuniya\nMullaitivu\nBatticaloa\nAmpara\nTrincomalee\nKurunegala\nPuttalam\nAnuradhapura\nPolonnaruwa\nBadulla\nMonaragala\nRatnapura\nKegalle",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "Location",
+   "reqd": 1
+  },
+  {
+   "fieldname": "latitude",
+   "fieldtype": "Float",
+   "label": "Latitude",
+   "precision": "7"
+  },
+  {
+   "fieldname": "longitude",
+   "fieldtype": "Float",
+   "label": "Longitude",
+   "precision": "7"
+  },
+  {
+   "fieldname": "quality_section",
+   "fieldtype": "Section Break",
+   "label": "Quality"
+  },
+  {
+   "default": "0",
+   "fieldname": "organic",
+   "fieldtype": "Check",
+   "label": "Organic"
+  },
+  {
+   "depends_on": "eval:doc.organic",
+   "fieldname": "certification",
+   "fieldtype": "Small Text",
+   "label": "Certification",
+   "mandatory_depends_on": "eval:doc.organic"
+  },
+  {
+   "fieldname": "images_section",
+   "fieldtype": "Section Break",
+   "label": "Images"
+  },
+  {
+   "fieldname": "images",
+   "fieldtype": "Table",
+   "label": "Images",
+   "options": "Listing Image"
+  },
+  {
+   "fieldname": "review_section",
+   "fieldtype": "Section Break",
+   "label": "Review"
+  },
+  {
+   "fieldname": "resubmission_note",
+   "fieldtype": "Small Text",
+   "label": "Resubmission Note"
+  },
+  {
+   "fieldname": "status_reason",
+   "fieldtype": "Small Text",
+   "label": "Latest Rejection / Suspension Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "submitted_on",
+   "fieldtype": "Datetime",
+   "label": "Submitted On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ai_suggested_min",
+   "fieldtype": "Currency",
+   "label": "AI Suggested Min",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ai_suggested_max",
+   "fieldtype": "Currency",
+   "label": "AI Suggested Max",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-05 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Listing",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Seller",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
