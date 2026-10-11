@@ -27,6 +27,13 @@ get_commodity                    Staff/Admin       one commodity's full fields +
                                                     days, for /admin/commodities/[id] (Story
                                                     3.16); view-only, reuses
                                                     get_price_history_and_forecast internally
+set_commodity_active             Staff/Admin       flips Commodity.is_active - the one write
+                                                    exception on the otherwise view-only
+                                                    /admin/commodities/[id] page (Story 5.2)
+get_price_suggestion_settings    Staff/Admin       the three horizon MAPE thresholds, for
+                                                    /admin/settings/pricing (Story 5.3)
+update_price_suggestion_settings Staff/Admin       saves the three horizon MAPE thresholds,
+                                                    validated to 0-100 (Story 5.3)
 ==============================  ================  ===================================
 """
 
@@ -61,14 +68,14 @@ def _forecast_days_for(commodity: str) -> list:
 	]
 
 
-def _tier_for(mape: float, sample_size: int, settings) -> str:
-	if sample_size < settings.min_sample_size:
+def _tier_for(mape: float | None, threshold: float, evaluated: bool) -> str:
+	# `evaluated` (Commodity.last_evaluated_on is set) must gate first: an unevaluated
+	# commodity's mape columns read back as 0.0, not None - Frappe's Float fields default to
+	# 0 when never written, they are never actually NULL. Trusting `mape` alone here would
+	# treat "never scored" as a perfect 0% score, which is exactly backwards.
+	if not evaluated or mape is None:
 		return "unavailable"
-	if mape < settings.direct_suggestion_mape_threshold:
-		return "direct"
-	if mape < settings.guidance_mape_threshold:
-		return "range"
-	return "unavailable"
+	return "direct" if mape < threshold else "unavailable"
 
 
 @frappe.whitelist()
@@ -78,10 +85,14 @@ def get_price_suggestion(category: str) -> dict:
 
 	{"available": False, "reason": "no_commodity_linked"} for a Category with no commodity
 	link (or an unknown category name) - never an error, since this is called from a seller's
-	listing form.
+	listing form. {"available": False, "reason": "disabled"} when the linked Commodity has
+	been turned off by staff (Story 5.2) - distinct from "no_commodity_linked" so the seller
+	sees an accurate message rather than being told there's no price reference at all.
 
 	Otherwise: {"available": True, "commodity_name", "price_unit", "tiers": {"near", "mid",
-	"long"}, "forecast_days": [...]}. Each tier is "direct" | "range" | "unavailable".
+	"long"}, "forecast_days": [...]}. Each tier is "direct" | "unavailable" - gated purely on
+	that horizon's MAPE against its own threshold in Price Suggestion Settings (Story 5.1;
+	supersedes epic 03's sample-size floor and direct/range split).
 	``price_unit`` ("kg", "egg", "fruit"...) is what the forecast prices are per.
 	"""
 	_require_authenticated()
@@ -93,19 +104,19 @@ def get_price_suggestion(category: str) -> dict:
 	commodity = frappe.db.get_value(
 		"Commodity",
 		commodity_name,
-		[
-			"mape_1_7d", "mape_8_14d", "mape_15_30d",
-			"sample_size_1_7d", "sample_size_8_14d", "sample_size_15_30d",
-			"unit", "harti_category",
-		],
+		["mape_1_7d", "mape_8_14d", "mape_15_30d", "unit", "harti_category", "last_evaluated_on", "is_active"],
 		as_dict=True,
 	)
+	if not commodity.is_active:
+		return {"available": False, "reason": "disabled"}
+
 	settings = frappe.get_single("Price Suggestion Settings")
+	evaluated = bool(commodity.last_evaluated_on)
 
 	tiers = {
-		"near": _tier_for(commodity.mape_1_7d, commodity.sample_size_1_7d, settings),
-		"mid": _tier_for(commodity.mape_8_14d, commodity.sample_size_8_14d, settings),
-		"long": _tier_for(commodity.mape_15_30d, commodity.sample_size_15_30d, settings),
+		"near": _tier_for(commodity.mape_1_7d, settings.mape_threshold_1_7d, evaluated),
+		"mid": _tier_for(commodity.mape_8_14d, settings.mape_threshold_8_14d, evaluated),
+		"long": _tier_for(commodity.mape_15_30d, settings.mape_threshold_15_30d, evaluated),
 	}
 
 	return {
@@ -269,3 +280,55 @@ def get_commodity(name: str) -> dict:
 		"last_evaluated_on": commodity_doc.last_evaluated_on,
 		"forecast_days": forecast["forecast_days"],
 	}
+
+
+@frappe.whitelist()
+def set_commodity_active(name: str, is_active: bool) -> dict:
+	"""Flips Commodity.is_active - the single write exception on the otherwise view-only
+	/admin/commodities/[id] page (Story 5.2). Staff/Admin only. Deliberately narrow: takes
+	only (name, is_active), never a general commodity-update endpoint - commodities stay
+	exclusively system-managed (backfill + daily job) for every other field."""
+	registration.require_staff()
+	if not frappe.db.exists("Commodity", name):
+		frappe.throw(_("Unknown commodity: {0}").format(name), frappe.DoesNotExistError)
+	frappe.db.set_value("Commodity", name, "is_active", bool(frappe.utils.cint(is_active)))
+	frappe.db.commit()
+	return {"name": name, "is_active": bool(frappe.db.get_value("Commodity", name, "is_active"))}
+
+
+_THRESHOLD_FIELDS = ("mape_threshold_1_7d", "mape_threshold_8_14d", "mape_threshold_15_30d")
+
+
+@frappe.whitelist()
+def get_price_suggestion_settings() -> dict:
+	"""The three horizon MAPE thresholds, for /admin/settings/pricing (Story 5.3). Staff/Admin
+	only."""
+	registration.require_staff()
+	settings = frappe.get_single("Price Suggestion Settings")
+	return {field: settings.get(field) for field in _THRESHOLD_FIELDS}
+
+
+@frappe.whitelist()
+def update_price_suggestion_settings(
+	mape_threshold_1_7d: float, mape_threshold_8_14d: float, mape_threshold_15_30d: float
+) -> dict:
+	"""Saves the three horizon MAPE thresholds (Story 5.3). Staff/Admin only. Each threshold
+	must be a percent in (0, 100] - 0 would gate every suggestion off outright, which is what
+	Story 5.2's is_active toggle is for instead."""
+	registration.require_staff()
+	values = {
+		"mape_threshold_1_7d": mape_threshold_1_7d,
+		"mape_threshold_8_14d": mape_threshold_8_14d,
+		"mape_threshold_15_30d": mape_threshold_15_30d,
+	}
+	for field, value in values.items():
+		if not isinstance(value, (int, float)) or value <= 0 or value > 100:
+			frappe.throw(_("{0} must be a percent greater than 0 and at most 100.").format(field))
+
+	# db.set_value per field, never a get_single()/.save() round trip - Story 5.1's
+	# verification found that pattern can clobber the doctype's OTHER fields with a stale
+	# in-memory snapshot (see ensure_price_suggestion_settings and this epic's tests).
+	for field, value in values.items():
+		frappe.db.set_value("Price Suggestion Settings", None, field, value)
+	frappe.db.commit()
+	return {field: frappe.db.get_single_value("Price Suggestion Settings", field) for field in _THRESHOLD_FIELDS}

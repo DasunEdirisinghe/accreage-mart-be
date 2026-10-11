@@ -101,19 +101,20 @@ class TestEdgeCases(FrappeTestCase):
 	# -- case: Price Suggestion Settings changes take effect immediately, no caching --
 
 	def test_settings_change_takes_effect_immediately_no_caching(self):
-		# Read the CURRENT guidance threshold first and derive both the commodity's MAPE and
-		# the new threshold from it, rather than hardcoding 30/35 against an assumed default of
-		# 25 - keeps this test correct regardless of what an earlier test left Settings at.
+		# Read the CURRENT near-horizon threshold first and derive both the commodity's MAPE
+		# and the new threshold from it, rather than hardcoding against an assumed default of
+		# 20 - keeps this test correct regardless of what an earlier test left Settings at.
 		settings = frappe.get_single("Price Suggestion Settings")
-		original_guidance = settings.guidance_mape_threshold
-		mape_above_current_guidance = original_guidance + 5
-		new_guidance_above_that = mape_above_current_guidance + 10
+		original_threshold = settings.mape_threshold_1_7d
+		mape_above_current_threshold = original_threshold + 5
+		new_threshold_above_that = mape_above_current_threshold + 10
 
 		frappe.get_doc(
 			{
 				"doctype": "Commodity", "commodity_name": TEST_COMMODITY_THRESHOLD,
 				"harti_category": TEST_CATEGORY, "market": "Pettah",
-				"mape_1_7d": mape_above_current_guidance, "sample_size_1_7d": 50,
+				"last_evaluated_on": frappe.utils.getdate(),
+				"mape_1_7d": mape_above_current_threshold,
 			}
 		).insert(ignore_permissions=True)
 		category = frappe.get_doc(
@@ -124,17 +125,17 @@ class TestEdgeCases(FrappeTestCase):
 		).insert(ignore_permissions=True)
 
 		before = get_price_suggestion(category.name)
-		self.assertEqual(before["tiers"]["near"], "unavailable")  # mape > current guidance threshold
+		self.assertEqual(before["tiers"]["near"], "unavailable")  # mape > current threshold
 
+		# Update via db.set_value, never a full doc load+save - this is a Single doctype, and
+		# round-tripping the whole document through frappe.get_single()/.save() to change one
+		# field risks clobbering the other threshold fields with a stale in-memory snapshot.
 		try:
-			settings.guidance_mape_threshold = new_guidance_above_that
-			settings.save(ignore_permissions=True)
+			frappe.db.set_value("Price Suggestion Settings", None, "mape_threshold_1_7d", new_threshold_above_that)
 			frappe.db.commit()
 
 			after = get_price_suggestion(category.name)  # same process, no restart, no cache clear
-			self.assertEqual(after["tiers"]["near"], "range")
+			self.assertEqual(after["tiers"]["near"], "direct")
 		finally:
-			settings = frappe.get_single("Price Suggestion Settings")
-			settings.guidance_mape_threshold = original_guidance
-			settings.save(ignore_permissions=True)
+			frappe.db.set_value("Price Suggestion Settings", None, "mape_threshold_1_7d", original_threshold)
 			frappe.db.commit()

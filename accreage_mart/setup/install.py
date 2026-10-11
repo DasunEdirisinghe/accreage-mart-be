@@ -264,22 +264,25 @@ def ensure_demo_users():
 
 
 def ensure_price_suggestion_settings():
-	"""Seed Price Suggestion Settings defaults once. Never overwrites an already-configured
-	site — same idempotency rule as ensure_email_templates: if an admin already saved a
-	threshold, bench migrate must not reset it."""
-	existing = frappe.db.get_single_value(
-		"Price Suggestion Settings", "direct_suggestion_mape_threshold"
-	)
-	if existing is not None:
-		return
-
+	"""Seed Price Suggestion Settings defaults once per field. Never overwrites an
+	already-configured value - same idempotency rule as ensure_email_templates: if an admin
+	already saved a threshold, bench migrate must not reset it. Checked and repaired
+	independently per field (not gated on just one) so a field left at a falsy value by any
+	other code path gets re-seeded rather than silently staying wrong forever."""
 	doc = frappe.get_single("Price Suggestion Settings")
-	doc.direct_suggestion_mape_threshold = 10
-	doc.guidance_mape_threshold = 25
-	doc.min_sample_size = 20
-	doc.interval_recalibration_factor = 1.5
-	doc.forecast_horizon_days = 30
-	doc.save(ignore_permissions=True)
+	changed = False
+	for fieldname, default in (
+		("mape_threshold_1_7d", 20),
+		("mape_threshold_8_14d", 20),
+		("mape_threshold_15_30d", 20),
+		("interval_recalibration_factor", 1.5),
+		("forecast_horizon_days", 30),
+	):
+		if not doc.get(fieldname):
+			doc.set(fieldname, default)
+			changed = True
+	if changed:
+		doc.save(ignore_permissions=True)
 
 
 def _ensure_demo_profile(user: str, doctype: str, fields: dict):

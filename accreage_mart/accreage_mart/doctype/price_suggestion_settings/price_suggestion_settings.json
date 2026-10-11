@@ -4,34 +4,34 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "direct_suggestion_mape_threshold",
-  "guidance_mape_threshold",
-  "min_sample_size",
+  "mape_threshold_1_7d",
+  "mape_threshold_8_14d",
+  "mape_threshold_15_30d",
   "column_break_thresholds",
   "interval_recalibration_factor",
   "forecast_horizon_days"
  ],
  "fields": [
   {
-   "default": "10",
-   "description": "Below this MAPE (%), a horizon bucket shows a confident, direct price.",
-   "fieldname": "direct_suggestion_mape_threshold",
+   "default": "20",
+   "description": "Below this MAPE (%), the 1-7 day horizon shows a suggested price. Above it, nothing is shown for that horizon.",
+   "fieldname": "mape_threshold_1_7d",
    "fieldtype": "Percent",
-   "label": "Direct Suggestion MAPE Threshold"
-  },
-  {
-   "default": "25",
-   "description": "Between the direct threshold and this one, a horizon bucket shows a wide scenario range instead of a point price. Above this, nothing is shown - too unreliable to be useful even as a range.",
-   "fieldname": "guidance_mape_threshold",
-   "fieldtype": "Percent",
-   "label": "Guidance MAPE Threshold"
+   "label": "MAPE Threshold 1-7d"
   },
   {
    "default": "20",
-   "description": "A horizon bucket's MAPE is not trusted for gating below this many realized predictions, regardless of how good the score looks - resolves the 0.0-vs-genuinely-perfect ambiguity a never-evaluated commodity would otherwise have.",
-   "fieldname": "min_sample_size",
-   "fieldtype": "Int",
-   "label": "Minimum Sample Size"
+   "description": "Below this MAPE (%), the 8-14 day horizon shows a suggested price. Above it, nothing is shown for that horizon.",
+   "fieldname": "mape_threshold_8_14d",
+   "fieldtype": "Percent",
+   "label": "MAPE Threshold 8-14d"
+  },
+  {
+   "default": "20",
+   "description": "Below this MAPE (%), the 15-30 day horizon shows a suggested price. Above it, nothing is shown for that horizon.",
+   "fieldname": "mape_threshold_15_30d",
+   "fieldtype": "Percent",
+   "label": "MAPE Threshold 15-30d"
   },
   {
    "fieldname": "column_break_thresholds",
@@ -86,7 +86,8 @@
   {
    "read": 1,
    "report": 1,
-   "role": "Staff"
+   "role": "Staff",
+   "write": 1
   }
  ],
  "sort_field": "modified",

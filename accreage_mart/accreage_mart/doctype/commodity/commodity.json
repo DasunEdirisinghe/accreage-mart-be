@@ -101,7 +101,7 @@
   },
   {
    "default": "0",
-   "description": "Number of realized predictions the 1-7d MAPE is based on. Below Price Suggestion Settings.min_sample_size, that bucket's score is not trusted for gating.",
+   "description": "Number of realized predictions the 1-7d MAPE is based on. Informational only as of epic 05 - no longer consulted by get_price_suggestion's gating, which is MAPE-only.",
    "fieldname": "sample_size_1_7d",
    "fieldtype": "Int",
    "label": "Sample Size 1-7d",
