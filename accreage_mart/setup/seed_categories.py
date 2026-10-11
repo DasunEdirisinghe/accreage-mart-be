@@ -2,7 +2,7 @@
 
 Run it once (and again any time, it is safe to repeat)::
 
-    bench --site accreage-mart.localhost execute accreage_mart.setup.seed_categories.run
+    bench --site acm.localhost execute accreage_mart.setup.seed_categories.run
 
 One category per product, not per variant ("Embul Kesel", not one for every market or grade).
 Each category is linked to the HARTI commodity whose price forecast best stands for it, so the
