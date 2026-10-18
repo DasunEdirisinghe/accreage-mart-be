@@ -82,8 +82,9 @@ class TestListingNotify(FrappeTestCase):
 
 	def test_no_notification_log_without_a_resolvable_seller_user(self):
 		listing = make_listing(self.seller, self.category)
-		frappe.db.set_value("Seller Profile", self.seller, "user", None, update_modified=False)
-		with patch(f"{NOTIFY}.smtp_configured", return_value=True), patch(f"{NOTIFY}.send_templated_email"):
+		with patch("accreage_mart.utils.listing_notify.lu.seller_user_of", return_value=None), patch(
+			f"{NOTIFY}.smtp_configured", return_value=True
+		), patch(f"{NOTIFY}.send_templated_email"):
 			notify_status_change(listing, "Approved")
 		self.assertEqual(
 			frappe.get_all("Notification Log", filters={"document_type": "Listing", "document_name": listing.name}),
