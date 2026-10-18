@@ -126,7 +126,8 @@ class TestGetListingForReview(ReviewTestCase):
 	def test_returns_the_public_view_plus_review_context(self):
 		listing = self.pending(latitude=7.29, longitude=80.63, organic=1, certification="SLS 1234")
 		with lu.system_write():
-			listing.ai_suggested_min, listing.ai_suggested_max = 100, 130
+			listing.price_suggestion_used = 1
+			listing.price_suggestion_horizon = "near"
 			listing.save()
 		self.as_staff()
 		result = api.get_listing_for_review(listing.name)
@@ -135,7 +136,7 @@ class TestGetListingForReview(ReviewTestCase):
 		self.assertEqual(detail["status"], "Pending Approval")
 		self.assertIn("google.com/maps", detail["map_url"])
 		review = result["review"]
-		self.assertEqual((review["ai_suggested_min"], review["ai_suggested_max"]), (100, 130))
+		self.assertEqual((review["price_suggestion_used"], review["price_suggestion_horizon"]), (True, "near"))
 		self.assertEqual(review["seller"]["email"], SELLER_A)
 		self.assertEqual(review["seller"]["business_name"], "Test Farms")
 		self.assertEqual(review["seller"]["account_status"], "active")

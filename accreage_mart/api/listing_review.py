@@ -281,8 +281,8 @@ def get_listing_for_review(name: str) -> dict:
 		"expected_modified": str(listing.modified),
 		"review": {
 			"submitted_on": listing.submitted_on,
-			"ai_suggested_min": listing.ai_suggested_min or None,
-			"ai_suggested_max": listing.ai_suggested_max or None,
+			"price_suggestion_used": bool(listing.price_suggestion_used),
+			"price_suggestion_horizon": listing.price_suggestion_horizon or None,
 			"ai_fair_value": (auction.ai_fair_value or None) if auction else None,
 			"resubmission_note": listing.resubmission_note,
 			"reviewed_by": listing.reviewed_by,

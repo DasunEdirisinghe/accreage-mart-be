@@ -88,6 +88,16 @@ class TestCreateListing(ApiListingsTestCase):
 		self.assertTrue(doc.submitted_on)
 		self.assertEqual(doc.images[0].is_cover, 1)
 
+	def test_records_whether_the_seller_used_the_ai_suggestion(self):
+		self.as_seller()
+		used = api.create_listing(**self.create_args(price_suggestion_used=1, price_suggestion_horizon="mid"))
+		doc = frappe.get_doc("Listing", used["name"])
+		self.assertEqual((doc.price_suggestion_used, doc.price_suggestion_horizon), (1, "mid"))
+
+		not_used = api.create_listing(**self.create_args())
+		doc = frappe.get_doc("Listing", not_used["name"])
+		self.assertEqual((doc.price_suggestion_used, doc.price_suggestion_horizon), (0, None))
+
 	def test_only_a_verified_seller_can_create(self):
 		args = self.create_args()
 		frappe.set_user("Guest")

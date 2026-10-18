@@ -51,6 +51,8 @@ CONTENT_FIELDS = (
 	"longitude",
 	"organic",
 	"certification",
+	"price_suggestion_used",
+	"price_suggestion_horizon",
 	*DIRECT_ONLY_FIELDS,
 )
 AUCTION_FIELDS = ("min_bid", "start_time", "end_time")
@@ -245,6 +247,8 @@ def create_listing(
 	start_time: str | None = None,
 	end_time: str | None = None,
 	auction_terms_acknowledged: int = 0,
+	price_suggestion_used: int = 0,
+	price_suggestion_horizon: str | None = None,
 ) -> dict:
 	profile = lu.require_seller()
 	values = {
@@ -264,6 +268,8 @@ def create_listing(
 		"longitude": longitude,
 		"organic": cint(organic),
 		"certification": certification,
+		"price_suggestion_used": cint(price_suggestion_used),
+		"price_suggestion_horizon": price_suggestion_horizon if cint(price_suggestion_used) else None,
 	}
 	terms = {"min_bid": min_bid, "start_time": start_time, "end_time": end_time}
 	return _create(profile, values, terms, auction_terms_acknowledged)

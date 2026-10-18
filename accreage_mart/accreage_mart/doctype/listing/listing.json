@@ -37,7 +37,9 @@
   "reviewed_by",
   "reviewed_on",
   "ai_suggested_min",
-  "ai_suggested_max"
+  "ai_suggested_max",
+  "price_suggestion_used",
+  "price_suggestion_horizon"
  ],
  "fields": [
   {
@@ -260,6 +262,20 @@
    "fieldtype": "Currency",
    "label": "AI Suggested Max",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Whether the seller's submitted price/bid is exactly the AI suggestion they clicked, unedited since.",
+   "fieldname": "price_suggestion_used",
+   "fieldtype": "Check",
+   "label": "AI Suggestion Used"
+  },
+  {
+   "depends_on": "eval:doc.price_suggestion_used",
+   "fieldname": "price_suggestion_horizon",
+   "fieldtype": "Select",
+   "label": "AI Suggestion Horizon",
+   "options": "\nnear\nmid\nlong"
   }
  ],
  "index_web_pages_for_search": 1,

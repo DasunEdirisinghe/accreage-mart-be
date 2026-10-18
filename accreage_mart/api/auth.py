@@ -23,8 +23,9 @@ set_account_status        Admin / Administrator   active/suspended/deactivated (
 account_applications      Staff / Admin     buyer/seller applications, any status (Story 2.2;
                                              was pending_accounts, Story 1.13 — now returns
                                              Pending/Approved/Rejected in one call)
-verify_account            Staff / Admin     approves + mints a set-password link + emails
-                                             account_approved (Story 2.2)
+verify_account            Staff / Admin     approves; emails account_approved_login if the
+                                             account already set its password, else mints a
+                                             set-password link + emails account_approved (2.2)
 reject_account            Staff / Admin     rejects with a reason + emails account_rejected
                                              (Story 2.2)
 ========================  ================  ===================================
@@ -38,6 +39,7 @@ from frappe import _
 
 from accreage_mart.utils.credentials import (
 	consume_key,
+	frontend_url,
 	is_key_valid,
 	issue_set_password_link,
 	send_onboarding_link,
@@ -283,8 +285,11 @@ def set_account_status(email: str, status: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def verify_account(email: str) -> dict:
-	"""Approve a buyer/seller application: flip verified/verification_status, mint a
-	fresh set-password link, and email account_approved. Staff/Admin only."""
+	"""Approve a buyer/seller application: flip verified/verification_status, then
+	email the result. An account that already set its password (the normal case —
+	onboarding happens before staff review) gets a plain "you can log in now" email;
+	only an account still stuck at "invited" gets a fresh set-password link.
+	Staff/Admin only."""
 	registration.require_staff()
 
 	doctype, name = _find_application(email)
@@ -302,19 +307,31 @@ def verify_account(email: str) -> dict:
 
 	full_name = frappe.db.get_value("User", email, "full_name") or "there"
 	business_name = frappe.db.get_value(doctype, name, "business_name")
-	link, expiry_note = issue_set_password_link(email)
+	account_status = frappe.db.get_value("User", email, "custom_account_status")
+
+	if account_status == "invited":
+		link, expiry_note = issue_set_password_link(email)
+		if smtp_configured():
+			send_templated_email(
+				key="account_approved",
+				recipient=email,
+				context={"full_name": full_name, "business_name": business_name},
+				cta_label="Set my password",
+				cta_url=link,
+				footer_note=expiry_note,
+			)
+		return {"ok": True, "dev_link": link if should_expose_link() else None}
 
 	if smtp_configured():
 		send_templated_email(
-			key="account_approved",
+			key="account_approved_login",
 			recipient=email,
 			context={"full_name": full_name, "business_name": business_name},
-			cta_label="Set my password",
-			cta_url=link,
-			footer_note=expiry_note,
+			cta_label="Log in",
+			cta_url=f"{frontend_url()}/login",
 		)
 
-	return {"ok": True, "dev_link": link if should_expose_link() else None}
+	return {"ok": True, "dev_link": None}
 
 
 @frappe.whitelist(methods=["POST"])

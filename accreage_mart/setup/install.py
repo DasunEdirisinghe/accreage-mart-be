@@ -111,6 +111,14 @@ EMAIL_TEMPLATES = {
 			"in and get started.</p>"
 		),
 	},
+	"account_approved_login": {
+		"subject": "Your Accreage Mart account is verified",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Great news — {{ business_name }} has been verified. You already set your password, "
+			"so you can log in right away.</p>"
+		),
+	},
 	"listing_low_stock": {
 		"subject": "Low stock on one of your listings",
 		"response": (
