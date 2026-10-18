@@ -74,7 +74,27 @@ def ensure_custom_fields():
 					"in_standard_filter": 1,
 					"description": "Accreage Mart account lifecycle state.",
 				}
-			]
+			],
+			"Notification Log": [
+				{
+					"fieldname": "custom_event_type",
+					"label": "Event Type",
+					"fieldtype": "Data",
+					"insert_after": "type",
+					"in_standard_filter": 1,
+					"description": (
+						"Accreage Mart event taxonomy, e.g. listing_approved, auction_outbid."
+					),
+				},
+				{
+					"fieldname": "custom_delivery_log",
+					"label": "Delivery Log",
+					"fieldtype": "Table",
+					"options": "Notification Delivery Log",
+					"insert_after": "custom_event_type",
+					"description": "One row per channel (Email/SMS) this notification was dispatched to.",
+				},
+			],
 		},
 		ignore_validate=True,
 	)
