@@ -19,7 +19,7 @@ from accreage_mart.tests.listing_fixtures import (
 	start_auction_now,
 )
 
-NOTIFY = "accreage_mart.utils.listing_notify"
+NOTIFY = "accreage_mart.utils.notify"
 
 
 class ApiListingsTestCase(FrappeTestCase):

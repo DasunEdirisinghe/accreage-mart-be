@@ -21,7 +21,7 @@ from accreage_mart.utils import listing as lu
 from accreage_mart.utils.profile import create_platform_user
 
 STAFF = "listing.staff@x.lk"
-NOTIFY = "accreage_mart.utils.listing_notify"
+NOTIFY = "accreage_mart.utils.notify"
 
 
 class ReviewTestCase(FrappeTestCase):
