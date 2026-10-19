@@ -32,6 +32,8 @@ def notify(
 	document_name: str | None = None,
 	email_template: str | None = None,
 	email_context: dict | None = None,
+	email_cta_label: str | None = None,
+	email_cta_url: str | None = None,
 ) -> "frappe.model.document.Document":
 	"""Create one ``Notification Log`` row for ``user`` plus one ``Notification Delivery
 	Log`` child row per requested channel in ``channels`` ("email"/"sms", case-insensitive).
@@ -43,7 +45,8 @@ def notify(
 	Email channel: sends via ``send_templated_email`` when ``email_template`` is given
 	(with ``email_context``), otherwise falls back to a plain ``frappe.sendmail`` of
 	``title``/``message``. SMS channel: no sender exists yet, always logs
-	``Not Implemented``.
+	``Not Implemented``. ``email_cta_label``/``email_cta_url`` add a "click here" button
+	to the templated email (ignored on the plain-sendmail fallback, which has no CTA slot).
 
 	Never raises on a delivery failure — a failed channel is logged on its delivery row,
 	not surfaced to the caller, so a notify() call never blocks the business action that
@@ -63,18 +66,21 @@ def notify(
 	)
 
 	for channel in channels:
-		log.append("custom_delivery_log", _dispatch(channel, user, title, message, email_template, email_context))
+		log.append(
+			"custom_delivery_log",
+			_dispatch(channel, user, title, message, email_template, email_context, email_cta_label, email_cta_url),
+		)
 
 	log.insert(ignore_permissions=True)
 	frappe.db.commit()
 	return log
 
 
-def _dispatch(channel, user, title, message, email_template, email_context) -> dict:
+def _dispatch(channel, user, title, message, email_template, email_context, cta_label, cta_url) -> dict:
 	canonical = _canonical_channel(channel)
 	if canonical == CHANNEL_SMS:
 		return {"channel": CHANNEL_SMS, "status": STATUS_NOT_IMPLEMENTED}
-	return _send_email(user, title, message, email_template, email_context)
+	return _send_email(user, title, message, email_template, email_context, cta_label, cta_url)
 
 
 def _canonical_channel(channel: str) -> str:
@@ -86,7 +92,7 @@ def _canonical_channel(channel: str) -> str:
 	frappe.throw(f"Unknown notification channel: {channel}")
 
 
-def _send_email(user, title, message, email_template, email_context) -> dict:
+def _send_email(user, title, message, email_template, email_context, cta_label, cta_url) -> dict:
 	row = {"channel": CHANNEL_EMAIL, "status": STATUS_PENDING}
 	try:
 		if not smtp_configured():
@@ -96,7 +102,13 @@ def _send_email(user, title, message, email_template, email_context) -> dict:
 
 		recipient = frappe.db.get_value("User", user, "email") or user
 		if email_template:
-			send_templated_email(key=email_template, recipient=recipient, context=email_context or {})
+			send_templated_email(
+				key=email_template,
+				recipient=recipient,
+				context=email_context or {},
+				cta_label=cta_label,
+				cta_url=cta_url,
+			)
 		else:
 			frappe.sendmail(recipients=[recipient], subject=title, message=message, now=True)
 

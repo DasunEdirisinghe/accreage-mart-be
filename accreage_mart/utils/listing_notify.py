@@ -3,6 +3,7 @@
 import frappe
 
 from accreage_mart.utils import listing as lu
+from accreage_mart.utils.credentials import frontend_url
 from accreage_mart.utils.notify import notify
 
 STATUS_TEMPLATES = {
@@ -37,6 +38,8 @@ def _notify(listing, event: str, title: str, message: str, extra: dict) -> None:
 				"title": listing.title,
 				**extra,
 			},
+			email_cta_label="View listing",
+			email_cta_url=f"{frontend_url()}/seller/listings/{listing.name}/edit",
 		)
 	except Exception:
 		frappe.log_error(title=f"Listing notification failed: {event}")

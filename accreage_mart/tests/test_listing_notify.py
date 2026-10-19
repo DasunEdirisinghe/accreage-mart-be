@@ -68,6 +68,8 @@ class TestListingNotify(FrappeTestCase):
 		self.assertEqual(send.call_args.kwargs["recipient"], SELLER)
 		self.assertEqual(send.call_args.kwargs["context"]["reason"], "Photos are blurry.")
 		self.assertEqual(send.call_args.kwargs["context"]["title"], listing.title)
+		self.assertEqual(send.call_args.kwargs["cta_label"], "View listing")
+		self.assertIn(f"/seller/listings/{listing.name}/edit", send.call_args.kwargs["cta_url"])
 
 	def test_low_stock_still_sends_the_same_templated_email(self):
 		listing = make_listing(self.seller, self.category, quantity_available=80, low_stock_level=100)
@@ -79,6 +81,7 @@ class TestListingNotify(FrappeTestCase):
 		self.assertEqual(send.call_args.kwargs["recipient"], SELLER)
 		self.assertEqual(send.call_args.kwargs["context"]["quantity"], 80)
 		self.assertEqual(send.call_args.kwargs["context"]["low_stock_level"], 100)
+		self.assertIn(f"/seller/listings/{listing.name}/edit", send.call_args.kwargs["cta_url"])
 
 	def test_no_notification_log_without_a_resolvable_seller_user(self):
 		listing = make_listing(self.seller, self.category)
