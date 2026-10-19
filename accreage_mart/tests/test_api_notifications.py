@@ -1,7 +1,12 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from accreage_mart.api.notifications import list_notifications, mark_all_seen, mark_notification_seen
+from accreage_mart.api.notifications import (
+	list_notifications,
+	list_notifications_page,
+	mark_all_seen,
+	mark_notification_seen,
+)
 from accreage_mart.utils.notify import notify
 from accreage_mart.utils.profile import create_platform_user
 
@@ -63,3 +68,33 @@ class TestApiNotifications(FrappeTestCase):
 			),
 			0,
 		)
+
+	def test_list_notifications_page_paginates_only_the_current_users_rows(self):
+		for i in range(5):
+			notify("listing_approved", USER_A, f"For A {i}", "msg", ["sms"])
+		notify("listing_approved", USER_B, "For B", "msg", ["sms"])
+
+		frappe.set_user(USER_A)
+		page_1 = list_notifications_page(page=1, page_size=2)
+		page_2 = list_notifications_page(page=2, page_size=2)
+		page_3 = list_notifications_page(page=3, page_size=2)
+
+		self.assertEqual(page_1["total"], 5)
+		self.assertEqual(len(page_1["notification_logs"]), 2)
+		self.assertTrue(page_1["has_more"])
+		self.assertEqual(len(page_2["notification_logs"]), 2)
+		self.assertTrue(page_2["has_more"])
+		self.assertEqual(len(page_3["notification_logs"]), 1)
+		self.assertFalse(page_3["has_more"])
+
+		seen_names = {row["name"] for row in (*page_1["notification_logs"], *page_2["notification_logs"], *page_3["notification_logs"])}
+		self.assertEqual(len(seen_names), 5)
+
+	def test_list_notifications_page_clamps_page_and_page_size(self):
+		notify("listing_approved", USER_A, "For A", "msg", ["sms"])
+
+		frappe.set_user(USER_A)
+		result = list_notifications_page(page=0, page_size=10000)
+
+		self.assertEqual(result["page"], 1)
+		self.assertEqual(result["page_size"], 100)

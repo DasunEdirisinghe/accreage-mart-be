@@ -39,7 +39,7 @@ def _notify(listing, event: str, title: str, message: str, extra: dict) -> None:
 				**extra,
 			},
 			email_cta_label="View listing",
-			email_cta_url=f"{frontend_url()}/seller/listings/{listing.name}/edit",
+			email_cta_url=f"{frontend_url()}/marketplace/{listing.name}",
 		)
 	except Exception:
 		frappe.log_error(title=f"Listing notification failed: {event}")
