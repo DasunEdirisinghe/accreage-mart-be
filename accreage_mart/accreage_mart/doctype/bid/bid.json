@@ -1,0 +1,77 @@
+{
+ "actions": [],
+ "autoname": "format:BID-{#####}",
+ "creation": "2026-10-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "auction",
+  "bidder",
+  "amount",
+  "bid_time"
+ ],
+ "fields": [
+  {
+   "fieldname": "auction",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Auction",
+   "options": "Auction",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "bidder",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Bidder",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "reqd": 1
+  },
+  {
+   "description": "Set automatically when the bid is placed.",
+   "fieldname": "bid_time",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Bid Time",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Bid",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff"
+  }
+ ],
+ "sort_field": "bid_time",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -35,6 +35,23 @@ def make_seller(email: str, *, verified: bool = True) -> str:
 	return email
 
 
+def make_buyer(email: str, *, status: str = "active") -> str:
+	"""A Buyer user + Buyer Profile, active and verified by default. Returns the user email."""
+	create_platform_user(email=email, full_name="Test Buyer", role="Buyer", status=status)
+	frappe.get_doc(
+		{
+			"doctype": "Buyer Profile",
+			"user": email,
+			"business_name": "Test Buyers Ltd",
+			"buyer_type": "Hotel",
+			"district": "Colombo",
+			"verified": 1,
+			"verification_status": "Approved",
+		}
+	).insert(ignore_permissions=True)
+	return email
+
+
 def image_bytes(kind: str = "PNG", size: int = 8) -> bytes:
 	"""A small valid image with random pixels, so two calls never share content (Frappe reuses
 	the stored file for identical bytes)."""
@@ -159,6 +176,8 @@ def purge(*emails: str) -> None:
 			frappe.delete_doc("File", name, force=True, ignore_permissions=True)
 	_created_files.clear()
 	for name in _created_auctions:
+		frappe.db.delete("Bid", {"auction": name})
+	for name in _created_auctions:
 		frappe.db.delete("Auction", {"name": name})
 	_created_auctions.clear()
 	for name in frappe.get_all("Category", filters={"title": ["like", "ZZ Listing Test%"]}, pluck="name"):
@@ -166,5 +185,7 @@ def purge(*emails: str) -> None:
 	for email in emails:
 		if frappe.db.exists("Seller Profile", {"user": email}):
 			frappe.delete_doc("Seller Profile", email, force=True, ignore_permissions=True)
+		if frappe.db.exists("Buyer Profile", {"user": email}):
+			frappe.delete_doc("Buyer Profile", email, force=True, ignore_permissions=True)
 		if frappe.db.exists("User", email):
 			frappe.delete_doc("User", email, force=True, ignore_permissions=True)

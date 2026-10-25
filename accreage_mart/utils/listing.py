@@ -14,6 +14,8 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
+from accreage_mart.utils.profile import get_account_status
+
 DISTRICTS = (
 	"Colombo",
 	"Gampaha",
@@ -123,6 +125,19 @@ def require_seller() -> str:
 	return profile
 
 
+def require_buyer() -> str:
+	"""User name of the caller, who must be a logged-in Buyer in good standing."""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Not authenticated."), frappe.AuthenticationError)
+	if "Buyer" not in frappe.get_roles(user):
+		frappe.throw(_("Only buyers can place bids."), frappe.PermissionError)
+	user_doc = frappe.db.get_value("User", user, ["custom_account_status", "enabled"], as_dict=True)
+	if get_account_status(user_doc) != "active":
+		frappe.throw(_("Your account is not in good standing."), frappe.PermissionError)
+	return user
+
+
 def seller_user_of(seller_profile: str | None) -> str | None:
 	if not seller_profile:
 		return None
@@ -207,8 +222,7 @@ def auction_is_live(start_time, end_time, now=None) -> bool:
 
 
 def auction_has_bids(auction_name: str) -> bool:
-	"""Bids arrive with the auction epic; until then no auction has any."""
-	return False
+	return bool(frappe.db.exists("Bid", {"auction": auction_name}))
 
 
 def count_active_orders(listing_name: str) -> int:

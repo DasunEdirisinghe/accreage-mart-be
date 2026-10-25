@@ -185,6 +185,15 @@ EMAIL_TEMPLATES = {
 			"any questions.</p>"
 		),
 	},
+	"auction_outbid": {
+		"subject": "You've been outbid",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>You were outbid on <strong>{{ title }}</strong>. The new highest bid is "
+			"Rs. {{ amount }} per {{ unit }}.</p>"
+			"<p>Place a higher bid before the auction ends if you'd like to stay in the running.</p>"
+		),
+	},
 }
 
 
