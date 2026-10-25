@@ -7,6 +7,7 @@ from accreage_mart.utils import listing as lu
 
 TERM_FIELDS = ("min_bid", "start_time", "end_time")
 DATETIME_FIELDS = ("start_time", "end_time")
+TEXT_FIELDS = ("cancel_reason",)
 
 
 class Auction(Document):
@@ -27,14 +28,17 @@ class Auction(Document):
 		old, new = previous.get(fieldname), self.get(fieldname)
 		if fieldname in DATETIME_FIELDS:
 			return get_datetime(old) != get_datetime(new)
+		if fieldname in TEXT_FIELDS:
+			return (old or "") != (new or "")
 		return flt(old) != flt(new)
 
 	def _guard_system_fields(self):
 		if lu.can_system_write():
 			return
-		changed = bool(flt(self.ai_fair_value)) if self.is_new() else self._changed("ai_fair_value")
-		if changed:
-			frappe.throw(_("{0} is managed by the system.").format(self.meta.get_label("ai_fair_value")))
+		for fieldname in lu.AUCTION_SYSTEM_FIELDS:
+			changed = bool(self.get(fieldname)) if self.is_new() else self._changed(fieldname)
+			if changed:
+				frappe.throw(_("{0} is managed by the system.").format(self.meta.get_label(fieldname)))
 
 	def _guard_started_lock(self):
 		"""Once a published auction has started its terms are locked for everyone."""

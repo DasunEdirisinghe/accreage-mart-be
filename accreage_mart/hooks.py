@@ -172,6 +172,11 @@ scheduler_events = {
 		"accreage_mart.pricing.tasks.ingest_daily_prices",
 		"accreage_mart.utils.listing_images.delete_orphan_images",
 	],
+	"cron": {
+		"* * * * *": [
+			"accreage_mart.api.auctions.close_expired_auctions",
+		],
+	},
 }
 
 # Testing

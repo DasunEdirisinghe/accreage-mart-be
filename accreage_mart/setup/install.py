@@ -194,6 +194,53 @@ EMAIL_TEMPLATES = {
 			"<p>Place a higher bid before the auction ends if you'd like to stay in the running.</p>"
 		),
 	},
+	"auction_rejected": {
+		"subject": "Your auction was not approved",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Your auction for <strong>{{ title }}</strong> was not approved.</p>"
+			"<p><strong>Reason:</strong> {{ reason }}</p>"
+		),
+	},
+	"auction_cancelled_seller": {
+		"subject": "Your auction has been cancelled",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Your auction for <strong>{{ title }}</strong> has been cancelled.</p>"
+			"<p><strong>Reason:</strong> {{ reason }}</p>"
+		),
+	},
+	"auction_cancelled_bidder": {
+		"subject": "An auction you bid on was cancelled",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>The auction for <strong>{{ title }}</strong> that you bid on has been cancelled.</p>"
+			"<p><strong>Reason:</strong> {{ reason }}</p>"
+		),
+	},
+	"auction_won": {
+		"subject": "You won the auction!",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>You won the auction for <strong>{{ title }}</strong> with a bid of "
+			"Rs. {{ amount }} per {{ unit }}.</p>"
+		),
+	},
+	"auction_sold": {
+		"subject": "Your auction has sold",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Your auction for <strong>{{ title }}</strong> sold for "
+			"Rs. {{ amount }} per {{ unit }}.</p>"
+		),
+	},
+	"auction_ended_no_bids": {
+		"subject": "Your auction ended with no bids",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Your auction for <strong>{{ title }}</strong> ended with no bids.</p>"
+		),
+	},
 }
 
 

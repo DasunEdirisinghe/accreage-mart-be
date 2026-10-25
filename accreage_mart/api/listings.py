@@ -105,7 +105,9 @@ def _view(listing) -> dict:
 			"start_time": auction.start_time,
 			"end_time": auction.end_time,
 			"duration_hours": auction.duration_hours,
-			"status": lu.derive_auction_status(listing.status, auction.start_time, auction.end_time),
+			"status": lu.derive_auction_status(
+				listing.status, auction.start_time, auction.end_time, cancelled=auction.cancelled
+			),
 		},
 	}
 

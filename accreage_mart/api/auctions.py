@@ -1,4 +1,4 @@
-"""Whitelisted bidding endpoints (Epic 07, Story 7.1).
+"""Whitelisted bidding and auction-lifecycle endpoints (Epic 07, Stories 7.1-7.2).
 
 Referenced from the frontend as ``accreage_mart.api.auctions.<fn>``.
 
@@ -13,26 +13,58 @@ place_bid           Buyer, account in good standing  rejects a non-live auction,
                                                        not exceed the current highest bid (or the
                                                        auction's minimum bid if it has none yet), and
                                                        a bid from the auction's own seller
+review_auction      Staff / Admin                    approve (-> scheduled, or straight to live if
+                                                       start_time already passed) or reject (reason
+                                                       required) a pending auction's listing
+cancel_auction      Staff / Admin                    reason required, only while scheduled or live;
+                                                       never refunds/voids - nothing is charged at bid
+                                                       time
 ==================  =============================  =================================================
 
 ``place_bid``'s highest-bid check and the ``Bid`` insert run inside one DB-level row lock on
 the ``Auction`` record (``for update``), so two near-simultaneous bids on the same auction can
 never both pass the "exceeds current highest" check against the same stale value.
+
+``close_expired_auctions`` runs every minute (see ``hooks.py``'s ``scheduler_events``), closing
+every live auction past its ``end_time``. It is idempotent: an auction whose seller has already
+been sent its closing notification (``auction_sold``/``auction_ended_no_bids``) is skipped on a
+later run.
 """
 
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, now_datetime
 
 from accreage_mart.utils import listing as lu
 from accreage_mart.utils.credentials import frontend_url
 from accreage_mart.utils.notify import notify
+from accreage_mart.utils.registration import require_staff
+
+REVIEW_DECISIONS = ("approve", "reject")
+CLOSED_EVENTS = ("auction_sold", "auction_ended_no_bids")
 
 
 def _auction(name: str):
 	if not name or not frappe.db.exists("Auction", name):
 		frappe.throw(_("Auction not found."), frappe.DoesNotExistError)
 	return frappe.get_doc("Auction", name)
+
+
+def _require_reason(reason: str | None) -> str:
+	reason = (reason or "").strip()
+	if not reason:
+		frappe.throw(_("A reason is required."))
+	return reason
+
+
+def _distinct_bidders(auction_name: str) -> list[str]:
+	return frappe.get_all(
+		"Bid",
+		filters={"auction": auction_name},
+		pluck="bidder",
+		distinct=True,
+		ignore_permissions=True,
+	)
 
 
 def _listing_of(auction_name: str):
@@ -89,7 +121,9 @@ def get_auction_detail(auction: str) -> dict:
 	"""The auction, its listing, full bid history (newest first) and the current highest bid."""
 	doc = _auction(auction)
 	listing = _listing_of(doc.name)
-	status = lu.derive_auction_status(listing.status, doc.start_time, doc.end_time)
+	status = lu.derive_auction_status(
+		listing.status, doc.start_time, doc.end_time, cancelled=doc.cancelled
+	)
 	return {
 		"auction": {
 			"name": doc.name,
@@ -97,6 +131,7 @@ def get_auction_detail(auction: str) -> dict:
 			"start_time": doc.start_time,
 			"end_time": doc.end_time,
 			"status": status,
+			"cancel_reason": doc.cancel_reason if doc.cancelled else None,
 		},
 		"listing": {
 			"name": listing.name,
@@ -121,7 +156,9 @@ def place_bid(auction: str, amount: float) -> dict:
 	if lu.owns_listing(listing.seller, user):
 		frappe.throw(_("You cannot bid on your own auction."), frappe.PermissionError)
 
-	status = lu.derive_auction_status(listing.status, doc.start_time, doc.end_time)
+	status = lu.derive_auction_status(
+		listing.status, doc.start_time, doc.end_time, cancelled=doc.cancelled
+	)
 	if status != "live":
 		frappe.throw(_("This auction is not currently live."))
 
@@ -176,3 +213,262 @@ def _notify_outbid(listing, auction, outbid_user: str, new_amount) -> None:
 		)
 	except Exception:
 		frappe.log_error(title="Auction outbid notification failed")
+
+
+# -- review / cancel (Story 7.2) ------------------------------------------------------------------
+
+
+@frappe.whitelist(methods=["POST"])
+def review_auction(auction: str, decision: str, reason: str | None = None) -> dict:
+	"""Approve or reject a pending auction's listing. Approve publishes it immediately -
+	``scheduled`` before its start time, or straight to ``live`` if that has already passed.
+	Reject requires a reason."""
+	require_staff()
+	if decision not in REVIEW_DECISIONS:
+		frappe.throw(_("Unknown decision."))
+	doc = _auction(auction)
+	listing = _listing_of(doc.name)
+	if listing.status != lu.PENDING:
+		frappe.throw(_("Only a pending auction can be reviewed."))
+
+	reason = _require_reason(reason) if decision == "reject" else ((reason or "").strip() or None)
+	action = "Approved" if decision == "approve" else "Rejected"
+	reviewer = frappe.session.user
+
+	savepoint = "auction_review"
+	frappe.db.savepoint(savepoint)
+	try:
+		with lu.system_write():
+			listing.status = lu.APPROVED if decision == "approve" else lu.REJECTED
+			listing.status_reason = reason if decision == "reject" else None
+			listing.reviewed_by = reviewer
+			listing.reviewed_on = now_datetime()
+			listing.save(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "Listing Review",
+					"listing": listing.name,
+					"action": action,
+					"reason": reason,
+					"reviewer": reviewer,
+				}
+			).insert(ignore_permissions=True)
+	except Exception:
+		frappe.db.rollback(save_point=savepoint)
+		raise
+	frappe.db.commit()
+
+	status = lu.derive_auction_status(listing.status, doc.start_time, doc.end_time, cancelled=doc.cancelled)
+	if decision == "reject":
+		_notify_rejected(listing, doc, reason)
+	return {"name": doc.name, "listing": listing.name, "status": status}
+
+
+@frappe.whitelist(methods=["POST"])
+def cancel_auction(auction: str, reason: str) -> dict:
+	"""Staff/admin cancel a scheduled or live auction, with a required reason. Purely a status
+	+ notification concern - never refunds or voids a bid, since nothing is charged at bid
+	time."""
+	require_staff()
+	reason = _require_reason(reason)
+	doc = _auction(auction)
+	listing = _listing_of(doc.name)
+	status = lu.derive_auction_status(listing.status, doc.start_time, doc.end_time, cancelled=doc.cancelled)
+	if status not in ("scheduled", "live"):
+		frappe.throw(_("Only a scheduled or live auction can be cancelled."))
+
+	savepoint = "auction_cancel"
+	frappe.db.savepoint(savepoint)
+	try:
+		with lu.system_write():
+			doc.cancelled = 1
+			doc.cancel_reason = reason
+			doc.save(ignore_permissions=True)
+	except Exception:
+		frappe.db.rollback(save_point=savepoint)
+		raise
+	frappe.db.commit()
+
+	_notify_cancelled(listing, doc, reason)
+	return {"name": doc.name, "status": "cancelled"}
+
+
+def _notify_rejected(listing, auction, reason: str) -> None:
+	"""Never blocks review_auction: a failure here is logged, not raised."""
+	try:
+		seller_user = lu.seller_user_of(listing.seller)
+		if not seller_user:
+			return
+		notify(
+			"auction_rejected",
+			seller_user,
+			"Your auction was not approved",
+			f"Your auction for {listing.title} was not approved. Reason: {reason}",
+			["email"],
+			document_type="Auction",
+			document_name=auction.name,
+			email_template="auction_rejected",
+			email_context={
+				"full_name": frappe.db.get_value("User", seller_user, "full_name") or "there",
+				"title": listing.title,
+				"reason": reason,
+			},
+			email_cta_label="View auction",
+			email_cta_url=f"{frontend_url()}/auctions/{auction.name}",
+		)
+	except Exception:
+		frappe.log_error(title="Auction rejected notification failed")
+
+
+def _notify_cancelled(listing, auction, reason: str) -> None:
+	"""Notifies the seller and every bidder. Never blocks cancel_auction."""
+	seller_user = lu.seller_user_of(listing.seller)
+	recipients = {seller_user} if seller_user else set()
+	recipients |= set(_distinct_bidders(auction.name))
+
+	for user in recipients:
+		is_seller = user == seller_user
+		try:
+			notify(
+				"auction_cancelled",
+				user,
+				"Auction cancelled",
+				(
+					f"Your auction for {listing.title} was cancelled. Reason: {reason}"
+					if is_seller
+					else f"The auction for {listing.title} that you bid on was cancelled. Reason: {reason}"
+				),
+				["email"],
+				document_type="Auction",
+				document_name=auction.name,
+				email_template="auction_cancelled_seller" if is_seller else "auction_cancelled_bidder",
+				email_context={
+					"full_name": frappe.db.get_value("User", user, "full_name") or "there",
+					"title": listing.title,
+					"reason": reason,
+				},
+				email_cta_label="View auction",
+				email_cta_url=f"{frontend_url()}/auctions/{auction.name}",
+			)
+		except Exception:
+			frappe.log_error(title="Auction cancelled notification failed")
+
+
+# -- scheduled closing (Story 7.2) ----------------------------------------------------------------
+
+
+def close_expired_auctions() -> None:
+	"""Scheduled every minute (see ``hooks.py``). Closes every live auction past its
+	``end_time``: notifies the winning bidder and the seller, or just the seller if there were
+	no bids. Idempotent - an auction already notified of its outcome is skipped."""
+	rows = frappe.db.sql(
+		"""select a.name as auction from `tabAuction` a
+		join `tabListing` l on l.auction = a.name
+		where l.status = %(approved)s and a.cancelled = 0 and a.end_time <= %(now)s""",
+		{"approved": lu.APPROVED, "now": now_datetime()},
+		as_dict=True,
+	)
+	for row in rows:
+		try:
+			_close_one(row.auction)
+		except Exception:
+			frappe.log_error(title=f"close_expired_auctions failed for {row.auction}")
+
+
+def _close_one(auction_name: str) -> None:
+	if frappe.db.exists(
+		"Notification Log",
+		{
+			"document_type": "Auction",
+			"document_name": auction_name,
+			"custom_event_type": ["in", CLOSED_EVENTS],
+		},
+	):
+		return  # already closed and notified on a previous run
+
+	doc = _auction(auction_name)
+	listing = _listing_of(auction_name)
+	highest = _highest_bid(auction_name)
+	if highest:
+		_notify_closed_with_winner(listing, doc, highest)
+	else:
+		_notify_closed_no_bids(listing, doc)
+
+
+def _notify_closed_with_winner(listing, auction, highest: dict) -> None:
+	"""Notifies the winning buyer, then the seller (the seller notification is the idempotency
+	marker checked by ``_close_one`` - it is always the last of the two to be sent)."""
+	amount = flt(highest["amount"])
+	winner = highest["bidder"]
+	try:
+		notify(
+			"auction_won",
+			winner,
+			"You won the auction!",
+			f"You won the auction for {listing.title} with a bid of Rs. {amount} per {listing.unit}.",
+			["email"],
+			document_type="Auction",
+			document_name=auction.name,
+			email_template="auction_won",
+			email_context={
+				"full_name": frappe.db.get_value("User", winner, "full_name") or "there",
+				"title": listing.title,
+				"amount": amount,
+				"unit": listing.unit,
+			},
+			email_cta_label="View auction",
+			email_cta_url=f"{frontend_url()}/auctions/{auction.name}",
+		)
+	except Exception:
+		frappe.log_error(title="Auction won notification failed")
+
+	seller_user = lu.seller_user_of(listing.seller)
+	if not seller_user:
+		return
+	try:
+		notify(
+			"auction_sold",
+			seller_user,
+			"Your auction has sold",
+			f"Your auction for {listing.title} sold for Rs. {amount} per {listing.unit}.",
+			["email"],
+			document_type="Auction",
+			document_name=auction.name,
+			email_template="auction_sold",
+			email_context={
+				"full_name": frappe.db.get_value("User", seller_user, "full_name") or "there",
+				"title": listing.title,
+				"amount": amount,
+				"unit": listing.unit,
+			},
+			email_cta_label="View auction",
+			email_cta_url=f"{frontend_url()}/auctions/{auction.name}",
+		)
+	except Exception:
+		frappe.log_error(title="Auction sold notification failed")
+
+
+def _notify_closed_no_bids(listing, auction) -> None:
+	"""Notifies the seller only; also the idempotency marker checked by ``_close_one``."""
+	seller_user = lu.seller_user_of(listing.seller)
+	if not seller_user:
+		return
+	try:
+		notify(
+			"auction_ended_no_bids",
+			seller_user,
+			"Your auction ended with no bids",
+			f"Your auction for {listing.title} ended with no bids.",
+			["email"],
+			document_type="Auction",
+			document_name=auction.name,
+			email_template="auction_ended_no_bids",
+			email_context={
+				"full_name": frappe.db.get_value("User", seller_user, "full_name") or "there",
+				"title": listing.title,
+			},
+			email_cta_label="View auction",
+			email_cta_url=f"{frontend_url()}/auctions/{auction.name}",
+		)
+	except Exception:
+		frappe.log_error(title="Auction ended-no-bids notification failed")

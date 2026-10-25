@@ -63,7 +63,7 @@ LISTING_COLUMNS = f"""
 	l.unit, l.price_per_unit, l.min_order_qty, l.quantity_available, l.low_stock_level,
 	l.district, l.location, l.organic, l.status, l.status_reason, l.resubmission_note,
 	l.creation, l.modified, sp.name as seller_profile, sp.business_name, sp.trust_score,
-	a.min_bid, a.start_time, a.end_time, a.duration_hours,
+	a.min_bid, a.start_time, a.end_time, a.duration_hours, a.cancelled,
 	if(l.selling_type = 'Direct', l.price_per_unit, a.min_bid) as display_price,
 	{_COVER} as cover_image
 """
@@ -89,7 +89,9 @@ def _auction_summary(row, listing_status: str) -> dict | None:
 		"start_time": row.start_time,
 		"end_time": row.end_time,
 		"duration_hours": row.duration_hours,
-		"status": lu.derive_auction_status(listing_status, row.start_time, row.end_time),
+		"status": lu.derive_auction_status(
+			listing_status, row.start_time, row.end_time, cancelled=row.get("cancelled")
+		),
 		"bidding_enabled": lu.BIDDING_ENABLED,
 	}
 
@@ -325,7 +327,9 @@ def build_listing_detail(listing, viewer: str) -> dict:
 			"start_time": auction.start_time,
 			"end_time": auction.end_time,
 			"duration_hours": auction.duration_hours,
-			"status": lu.derive_auction_status(listing.status, auction.start_time, auction.end_time),
+			"status": lu.derive_auction_status(
+				listing.status, auction.start_time, auction.end_time, cancelled=auction.cancelled
+			),
 			"bidding_enabled": lu.BIDDING_ENABLED,
 		},
 	}

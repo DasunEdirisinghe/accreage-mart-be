@@ -79,7 +79,7 @@ LISTING_SYSTEM_FIELDS = (
 	"ai_suggested_max",
 	"auction",
 )
-AUCTION_SYSTEM_FIELDS = ("ai_fair_value",)
+AUCTION_SYSTEM_FIELDS = ("ai_fair_value", "cancelled", "cancel_reason")
 
 
 @contextmanager
@@ -189,13 +189,17 @@ def google_maps_url(latitude, longitude) -> str | None:
 	return f"https://www.google.com/maps?q={flt(latitude)},{flt(longitude)}"
 
 
-def derive_auction_status(listing_status: str, start_time, end_time, now=None) -> str:
+def derive_auction_status(listing_status: str, start_time, end_time, now=None, cancelled=False) -> str:
 	"""Auction status is never stored: it follows the listing status and the clock.
 
-	``pending`` / ``rejected`` mirror the listing; an approved listing is ``scheduled`` before the
-	start, ``live`` between start and end, ``ended`` after. Hidden / suspended / archived listings
+	``cancelled`` takes priority over everything else - a staff cancellation reports
+	``cancelled`` regardless of where the auction sits in its window. Otherwise ``pending`` /
+	``rejected`` mirror the listing; an approved listing is ``scheduled`` before the start,
+	``live`` between start and end, ``ended`` after. Hidden / suspended / archived listings
 	report that listing status in lower case.
 	"""
+	if cancelled:
+		return "cancelled"
 	if listing_status == PENDING:
 		return "pending"
 	if listing_status == REJECTED:
