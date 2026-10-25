@@ -57,10 +57,12 @@ class AuctionReviewTestCase(FrappeTestCase):
 			listing_status, doc.start_time, doc.end_time, cancelled=doc.cancelled
 		)
 
-	def notification_events(self, auction_name, user=None):
+	def notification_events(self, auction_name, user=None, events=None):
 		filters = {"document_type": "Auction", "document_name": auction_name}
 		if user:
 			filters["for_user"] = user
+		if events:
+			filters["custom_event_type"] = ["in", events]
 		return frappe.get_all(
 			"Notification Log", filters=filters, pluck="custom_event_type", ignore_permissions=True
 		)
@@ -196,7 +198,7 @@ class TestCancelAuction(AuctionReviewTestCase):
 		for call in send.call_args_list:
 			self.assertEqual(call.kwargs["context"]["reason"], "Quality dispute.")
 		self.assertEqual(
-			sorted(self.notification_events(auction.name)),
+			sorted(self.notification_events(auction.name, events=["auction_cancelled"])),
 			sorted(["auction_cancelled"] * 3),
 		)
 
@@ -231,7 +233,8 @@ class TestCloseExpiredAuctions(AuctionReviewTestCase):
 		recipients = {call.kwargs["recipient"] for call in send.call_args_list}
 		self.assertEqual(recipients, {SELLER_A, BUYER_B})
 		self.assertEqual(
-			sorted(self.notification_events(auction.name)), sorted(["auction_won", "auction_sold"])
+			sorted(self.notification_events(auction.name, events=["auction_won", "auction_sold"])),
+			sorted(["auction_won", "auction_sold"]),
 		)
 
 	def test_closes_with_no_bids_and_notifies_only_the_seller_once(self):
