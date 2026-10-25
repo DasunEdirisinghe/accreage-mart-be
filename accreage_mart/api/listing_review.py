@@ -238,6 +238,8 @@ def list_listings_for_review(
 				"start_time": row.start_time,
 				"end_time": row.end_time,
 				"start_passed": get_datetime(row.start_time) <= now,
+				"end_passed": get_datetime(row.end_time) <= now,
+				"cancelled": bool(row.cancelled),
 			}
 		items.append(
 			{
