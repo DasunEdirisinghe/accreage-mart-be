@@ -74,13 +74,12 @@ def _highest_bid_locked(auction_name: str) -> dict | None:
 	the first one commits or rolls back. Both queries use ``for update`` so they read the
 	latest committed data rather than a transaction's earlier (possibly stale) snapshot.
 	"""
-	frappe.db.sql("select name from `tabAuction` where name=%s", auction_name, for_update=True)
+	frappe.db.sql("select name from `tabAuction` where name=%s for update", auction_name)
 	rows = frappe.db.sql(
 		"""select bidder, amount from `tabBid` where auction=%s
-		order by amount desc, bid_time asc, name asc limit 1""",
+		order by amount desc, bid_time asc, name asc limit 1 for update""",
 		auction_name,
 		as_dict=True,
-		for_update=True,
 	)
 	return rows[0] if rows else None
 
