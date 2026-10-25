@@ -212,7 +212,7 @@ def list_listings_for_review(
 
 	total = frappe.db.sql(f"select count(*) {mk.LISTING_FROM} where {condition}", params)[0][0]
 	rows = frappe.db.sql(
-		f"""select {mk.LISTING_COLUMNS},
+		f"""select {mk.LISTING_COLUMNS}, l.auction as auction_name,
 			(select count(*) from `tabListing Review` r
 				where r.listing = l.name and r.action = 'Rejected') as previous_rejections,
 			(select count(*) from `tabListing Review` r
@@ -233,6 +233,7 @@ def list_listings_for_review(
 		auction = None
 		if row.selling_type == lu.AUCTION and row.start_time:
 			auction = {
+				"name": row.auction_name,
 				"min_bid": row.min_bid,
 				"start_time": row.start_time,
 				"end_time": row.end_time,

@@ -19,6 +19,10 @@ review_auction      Staff / Admin                    approve (-> scheduled, or s
 cancel_auction      Staff / Admin                    reason required, only while scheduled or live;
                                                        never refunds/voids - nothing is charged at bid
                                                        time
+list_seller_auctions  Verified seller                the caller's own auctions (their Auction-type
+                                                       listings), newest activity first, paginated
+list_buyer_bids     Buyer, account in good standing   every auction the caller has bid on, newest
+                                                       activity first, paginated
 ==================  =============================  =================================================
 
 ``place_bid``'s highest-bid check and the ``Bid`` insert run inside one DB-level row lock on
@@ -35,6 +39,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt, now_datetime
 
+from accreage_mart.api import marketplace as mk
 from accreage_mart.utils import listing as lu
 from accreage_mart.utils.credentials import frontend_url
 from accreage_mart.utils.notify import notify
@@ -472,3 +477,98 @@ def _notify_closed_no_bids(listing, auction) -> None:
 		)
 	except Exception:
 		frappe.log_error(title="Auction ended-no-bids notification failed")
+
+
+# -- listing endpoints for the frontend (Story 7.3) -----------------------------------------------
+
+
+@frappe.whitelist()
+def list_seller_auctions(page: int = 1, page_size: int = mk.DEFAULT_PAGE_SIZE) -> dict:
+	"""The caller's own auctions (their Auction-type listings), newest activity first."""
+	profile = lu.require_seller()
+	page, page_size = mk.page_args(page, page_size)
+
+	where = {"seller": profile, "selling_type": lu.AUCTION}
+	total = frappe.db.count("Listing", where)
+	listings = frappe.get_all(
+		"Listing",
+		filters=where,
+		fields=["name", "title", "unit", "auction", "status"],
+		order_by="modified desc, name desc",
+		limit_page_length=page_size,
+		limit_start=(page - 1) * page_size,
+		ignore_permissions=True,
+	)
+	items = []
+	for row in listings:
+		doc = frappe.get_doc("Auction", row.auction)
+		items.append(
+			{
+				"name": row.auction,
+				"listing": {"name": row.name, "title": row.title, "unit": row.unit},
+				"min_bid": doc.min_bid,
+				"start_time": doc.start_time,
+				"end_time": doc.end_time,
+				"status": lu.derive_auction_status(row.status, doc.start_time, doc.end_time, cancelled=doc.cancelled),
+				"cancel_reason": doc.cancel_reason if doc.cancelled else None,
+				"bid_count": len(_bids_of(row.auction)),
+				"highest_bid": _highest_bid(row.auction),
+			}
+		)
+	return {
+		"items": items,
+		"total": total,
+		"page": page,
+		"page_size": page_size,
+		"has_more": page * page_size < total,
+	}
+
+
+@frappe.whitelist()
+def list_buyer_bids(page: int = 1, page_size: int = mk.DEFAULT_PAGE_SIZE) -> dict:
+	"""Every auction the caller has bid on, newest activity first."""
+	user = lu.require_buyer()
+	page, page_size = mk.page_args(page, page_size)
+
+	total = frappe.db.sql(
+		"select count(distinct auction) from `tabBid` where bidder=%s", user, as_dict=False
+	)[0][0]
+	rows = frappe.db.sql(
+		"""select auction, max(bid_time) as last_bid_time from `tabBid` where bidder=%s
+		group by auction order by last_bid_time desc limit %s offset %s""",
+		(user, page_size, (page - 1) * page_size),
+		as_dict=True,
+	)
+
+	items = []
+	for row in rows:
+		doc = _auction(row.auction)
+		listing = _listing_of(row.auction)
+		highest = _highest_bid(row.auction)
+		mine = frappe.get_all(
+			"Bid",
+			filters={"auction": row.auction, "bidder": user},
+			fields=["amount", "bid_time"],
+			order_by="amount desc, bid_time asc",
+			limit=1,
+			ignore_permissions=True,
+		)
+		items.append(
+			{
+				"name": row.auction,
+				"listing": {"name": listing.name, "title": listing.title, "unit": listing.unit},
+				"status": lu.derive_auction_status(listing.status, doc.start_time, doc.end_time, cancelled=doc.cancelled),
+				"cancel_reason": doc.cancel_reason if doc.cancelled else None,
+				"end_time": doc.end_time,
+				"my_highest_bid": mine[0] if mine else None,
+				"highest_bid": highest,
+				"leading": bool(highest) and highest["bidder"] == user,
+			}
+		)
+	return {
+		"items": items,
+		"total": total,
+		"page": page,
+		"page_size": page_size,
+		"has_more": page * page_size < total,
+	}
