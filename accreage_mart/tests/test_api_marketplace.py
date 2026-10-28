@@ -81,7 +81,7 @@ class TestListMarketplace(MarketplaceTestCase):
 		self.assertEqual(set(items), {scheduled.name, running.name})
 		self.assertEqual(items[scheduled.name]["auction"]["status"], "scheduled")
 		self.assertEqual(items[running.name]["auction"]["status"], "live")
-		self.assertFalse(items[running.name]["auction"]["bidding_enabled"])
+		self.assertTrue(items[running.name]["auction"]["bidding_enabled"])
 		self.assertIsNone(items[running.name]["price_per_unit"])
 
 	def test_the_card_is_an_allow_list_and_never_leaks_the_sellers_email(self):
@@ -272,7 +272,7 @@ class TestGetListing(MarketplaceTestCase):
 		result = self._as("Guest", listing)
 		auction = result["listing"]["auction"]
 		self.assertEqual((auction["min_bid"], auction["status"]), (100, "scheduled"))
-		self.assertFalse(auction["bidding_enabled"])
+		self.assertTrue(auction["bidding_enabled"])
 		self.assertFalse(result["accepting_orders"])
 		self.assertIsNone(result["listing"]["price_per_unit"])
 

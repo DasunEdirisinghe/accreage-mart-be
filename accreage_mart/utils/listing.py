@@ -149,10 +149,6 @@ def owns_listing(listing_seller: str | None, user: str | None = None) -> bool:
 	return bool(listing_seller) and seller_user_of(listing_seller) == user
 
 
-# Flipped on by the auction epic, which adds bidding.
-BIDDING_ENABLED = False
-
-
 def public_seller_id(seller_profile: str) -> str:
 	"""Opaque public id for a seller. The Seller Profile name is the user's email, which must
 	never appear in a public response or URL."""

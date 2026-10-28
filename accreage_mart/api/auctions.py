@@ -121,14 +121,17 @@ def _highest_bid_locked(auction_name: str) -> dict | None:
 	return rows[0] if rows else None
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_auction_detail(auction: str) -> dict:
-	"""The auction, its listing, full bid history (newest first) and the current highest bid."""
+	"""The auction, its listing (the same facts as the public marketplace detail page), full bid
+	history (newest first) and the current highest bid."""
 	doc = _auction(auction)
 	listing = _listing_of(doc.name)
 	status = lu.derive_auction_status(
 		listing.status, doc.start_time, doc.end_time, cancelled=doc.cancelled
 	)
+	category = frappe.db.get_value("Category", listing.category, ["title", "area"], as_dict=True)
+	images = sorted(listing.images, key=lambda row: (not row.is_cover, row.idx))
 	return {
 		"auction": {
 			"name": doc.name,
@@ -141,10 +144,21 @@ def get_auction_detail(auction: str) -> dict:
 		"listing": {
 			"name": listing.name,
 			"title": listing.title,
+			"description": listing.description,
+			"category": {"name": listing.category, "title": category.title, "area": category.area},
 			"unit": listing.unit,
 			"quantity_available": listing.quantity_available,
-			"seller_business_name": frappe.db.get_value("Seller Profile", listing.seller, "business_name"),
-			"seller": lu.public_seller_id(listing.seller),
+			"district": listing.district,
+			"location": listing.location,
+			"latitude": listing.latitude or None,
+			"longitude": listing.longitude or None,
+			"map_url": lu.google_maps_url(listing.latitude, listing.longitude),
+			"organic": bool(listing.organic),
+			"certification": listing.certification,
+			"images": [{"url": row.image, "is_cover": bool(row.is_cover)} for row in images],
+			"cover_image": images[0].image if images else None,
+			"created": listing.creation,
+			"seller": mk._seller_card(listing.seller),
 		},
 		"bids": _bids_of(doc.name),
 		"highest_bid": _highest_bid(doc.name),
