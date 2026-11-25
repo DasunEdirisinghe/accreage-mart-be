@@ -51,16 +51,39 @@ request_staff_cancellation          seller              confirmed after a reject
 resolve_staff_cancellation_request  staff / admin       cancel / refuse the seller's request, reason
 ==================================  ==================  ===============================================
 
+Guard matrix (Story 8.3)
+------------------------
+=======================  ==================  ==================================================
+Endpoint                 Caller              Notes
+=======================  ==================  ==================================================
+upload_payment_proof     buyer               confirmed only, before the deadline (a flagged order
+                                             has none); multipart ``file`` JPG/PNG/PDF <= 5 MB,
+                                             checked by content, stored private and attached to
+                                             the proof; amount, date, bank, reference required
+                                             -> payment_review. Notifies the seller and staff
+review_payment_proof     seller / staff      the Submitted slip of a payment_review order; first
+                                             decision wins ("Already reviewed"). reject needs a
+                                             category + reason -> confirmed, fresh 72 h; approve
+                                             -> paid, stock - quantity floored at 0 (D11)
+approve_flagged_payment  staff / admin       confirmed + needs_staff_review (D13): staff decide
+                                             the payment arrived -> paid, same stock rule;
+                                             reason required
+list_pending_proofs      staff / admin       the payments queue, oldest first
+get_order_stats          seller / staff      counts by status + sales; seller scope or platform
+=======================  ==================  ==================================================
+
 Every order payload carries ``status_deadline``, ``action_by`` (buyer / seller / staff / none) and
 ``on_expiry`` (cancel / staff_review / auto_complete / null) so both parties can show the same
 countdown (D14).
 """
 
+import uuid
 from contextlib import contextmanager
 
 import frappe
 from frappe import _
-from frappe.utils import flt, now_datetime
+from frappe.query_builder.functions import Count, Sum
+from frappe.utils import cint, flt, getdate, now_datetime, nowdate
 
 from accreage_mart.api import marketplace as mk
 from accreage_mart.utils import listing as lu
@@ -120,8 +143,8 @@ def _lock_listing(name: str):
 	"""Lock the Listing row and return it fresh (stock and status as of right now)."""
 	if not name or not frappe.db.exists("Listing", name):
 		frappe.throw(_("Listing not found."), frappe.DoesNotExistError)
-	frappe.db.sql("select name from `tabListing` where name=%s for update", name)
-	return frappe.get_doc("Listing", name)
+	# A locking read sees the latest committed row even inside an older REPEATABLE READ snapshot.
+	return frappe.get_doc("Listing", name, for_update=True)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -322,34 +345,51 @@ def _offers(order_name: str) -> list[dict]:
 	return [dict(row) for row in rows]
 
 
-def _payment_proofs(order_name: str) -> list[dict]:
+PROOF_FIELDS = (
+	"name",
+	"order",
+	"file",
+	"status",
+	"submitted_on",
+	"amount_paid",
+	"paid_on",
+	"paid_from_bank",
+	"transfer_reference",
+	"note",
+	"reviewed_by",
+	"reviewed_on",
+	"reject_category",
+	"reject_reason",
+)
+
+
+def _proof_payload(row, order) -> dict:
+	"""One slip as the parties see it: ``reviewer_role`` (seller / staff) instead of the reviewer's
+	user id, and ``amount_matches`` so the reviewer sees a paid amount that differs from the
+	order total (highlighted, never blocked - D10)."""
+	data = {field: row.get(field) for field in PROOF_FIELDS}
+	data["reviewer_role"] = ou.reviewer_role(row, order)
+	data.pop("reviewed_by")
+	data["expected_amount"] = flt(order.get("total_price"))
+	data["amount_matches"] = flt(row.get("amount_paid"), 2) == flt(order.get("total_price"), 2)
+	return data
+
+
+def _payment_proofs(order) -> list[dict]:
 	rows = frappe.get_all(
 		"Payment Proof",
-		filters={"order": order_name},
-		fields=[
-			"name",
-			"file",
-			"status",
-			"submitted_on",
-			"amount_paid",
-			"paid_on",
-			"paid_from_bank",
-			"transfer_reference",
-			"note",
-			"reviewed_on",
-			"reject_category",
-			"reject_reason",
-		],
+		filters={"order": order.get("name")},
+		fields=list(PROOF_FIELDS),
 		order_by="submitted_on desc, creation desc",
 		ignore_permissions=True,
 	)
-	return [dict(row) for row in rows]
+	return [_proof_payload(row, order) for row in rows]
 
 
 def _order_detail(order, viewer: str) -> dict:
 	data = _order_summary(order, viewer)
 	data["offers"] = _offers(order.name)
-	data["payment_proofs"] = _payment_proofs(order.name)
+	data["payment_proofs"] = _payment_proofs(order)
 
 	# D10 - the buyer sees where to pay once the price is locked; never before, never publicly.
 	locked = order.status in ou.PRICE_LOCKED_STATUSES
@@ -500,8 +540,10 @@ def _lock_order(name: str):
 	are serialised (same pattern as ``place_bid`` in ``api/auctions.py``)."""
 	if not name or not frappe.db.exists("Order", name):
 		frappe.throw(_("Order not found."), frappe.DoesNotExistError)
-	frappe.db.sql("select name from `tabOrder` where name=%s for update", name)
-	return frappe.get_doc("Order", name)
+	# ``for_update`` loads the row with a locking read, so the doc reflects whatever a concurrent
+	# request committed while we waited for the lock (a plain read could return the transaction's
+	# older REPEATABLE READ snapshot).
+	return frappe.get_doc("Order", name, for_update=True)
 
 
 def _actor(order, allowed: tuple[str, ...], refusal: str) -> str:
@@ -1159,3 +1201,521 @@ def _notify_staff_cancel_request_refused(order, reason: str) -> None:
 		f"Staff refused your request to cancel order {order.name} ({_what(order)}). Reason: {_sentence(reason)}",
 		{"reason": reason},
 	)
+
+
+# -- payment proof upload and review (Story 8.3) ---------------------------------------------------
+
+SLIP_FIELD = "file"
+APPROVE = "approve"
+REJECT = "reject"
+NOTE_MAX = 1000
+
+
+def _uploaded_slip() -> bytes:
+	"""The multipart ``file`` field, read one byte past the limit so an oversized slip is caught
+	without loading all of it."""
+	upload = (frappe.request.files if frappe.request else {}).get(SLIP_FIELD)
+	if not upload:
+		frappe.throw(_("Please attach your payment slip."))
+	return upload.stream.read(ou.MAX_SLIP_BYTES + 1)
+
+
+def _payment_details(order, amount_paid, paid_on, paid_from_bank, transfer_reference, note) -> dict:
+	"""The details the buyer types next to the slip (D10), checked and trimmed."""
+	amount = flt(amount_paid, 2)
+	if amount <= 0:
+		frappe.throw(_("Enter the amount you paid."))
+	if paid_on in (None, ""):
+		frappe.throw(_("Enter the date you paid."))
+	try:
+		date = getdate(paid_on)
+	except Exception:
+		frappe.throw(_("Enter a valid payment date."))
+	if date > getdate(nowdate()):
+		frappe.throw(_("The payment date can't be in the future."))
+	if date < getdate(order.creation):
+		frappe.throw(_("The payment date can't be before the order was placed."))
+
+	bank = (paid_from_bank or "").strip()
+	reference = (transfer_reference or "").strip()
+	if not bank:
+		frappe.throw(_("Enter the bank you paid from."))
+	if not reference:
+		frappe.throw(_("Enter the transfer reference from your bank slip."))
+	if len(bank) > ou.DETAIL_MAX:
+		frappe.throw(_("The bank name is too long."))
+	if len(reference) > ou.DETAIL_MAX:
+		frappe.throw(_("The transfer reference is too long."))
+	note = (note or "").strip()
+	if len(note) > NOTE_MAX:
+		frappe.throw(_("Please keep the note under {0} characters.").format(NOTE_MAX))
+	return {
+		"amount_paid": amount,
+		"paid_on": date,
+		"paid_from_bank": bank,
+		"transfer_reference": reference,
+		"note": note or None,
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def upload_payment_proof(
+	order: str,
+	amount_paid: float | None = None,
+	paid_on: str | None = None,
+	paid_from_bank: str | None = None,
+	transfer_reference: str | None = None,
+	note: str | None = None,
+) -> dict:
+	"""The buyer's bank slip (multipart field ``file``: JPG, PNG or PDF up to 5 MB) plus the
+	payment details, on a ``confirmed`` order. The slip is stored as a private file only the buyer,
+	the seller and staff can open; the order moves to ``payment_review``."""
+	doc = _lock_order(order)
+	_actor(doc, (ou.BUYER,), _("Only the buyer can upload a payment slip."))
+	if doc.status == ou.PAYMENT_REVIEW:
+		frappe.throw(_("Your payment slip is already waiting for review."))
+	_require_status(doc, ou.CONFIRMED)
+	if not doc.needs_staff_review:
+		# A flagged order (D13) has no clock any more: the buyer may still send a new slip.
+		_party_deadline(doc, ou.BUYER)
+	details = _payment_details(doc, amount_paid, paid_on, paid_from_bank, transfer_reference, note)
+	content = _uploaded_slip()
+	kind = ou.validate_slip(content)
+	ou.assert_transition(doc, ou.PAYMENT_REVIEW, ou.BUYER)
+
+	now = now_datetime()
+	with _atomic("upload_payment_proof"):
+		# A random name: the buyer's own filename can carry personal information.
+		file = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"{ou.SLIP_FILE_PREFIX}{uuid.uuid4().hex}.{ou.SLIP_EXTENSIONS[kind]}",
+				"content": content,
+				"is_private": 1,
+			}
+		).insert(ignore_permissions=True)
+		proof = frappe.get_doc(
+			{
+				"doctype": "Payment Proof",
+				"order": doc.name,
+				"file": file.file_url,
+				"status": ou.PROOF_SUBMITTED,
+				"submitted_on": now,
+				**details,
+			}
+		).insert(ignore_permissions=True)
+		# Attached to the proof, the private file is readable exactly by who may read the proof
+		# (Frappe's File permission defers to the attached document).
+		frappe.db.set_value(
+			"File",
+			file.name,
+			{
+				"attached_to_doctype": "Payment Proof",
+				"attached_to_name": proof.name,
+				"attached_to_field": "file",
+			},
+			update_modified=False,
+		)
+		doc.status = ou.PAYMENT_REVIEW
+		doc.status_deadline = None
+		doc.has_submitted_proof = 1  # never cleared (D13)
+		doc.needs_staff_review = 0
+		# A pending buyer cancellation request is moot once a slip is in. A seller's request to
+		# staff stays: staff still see it if this slip is rejected too.
+		doc.cancel_requested = 0
+		doc.cancel_request_reason = None
+		doc.save(ignore_permissions=True)
+	_notify_proof_submitted(doc, proof)
+	doc.reload()
+	return _order_detail(doc, frappe.session.user)
+
+
+def _reject_category(value: str | None) -> str:
+	value = (value or "").strip()
+	for category in ou.REJECT_CATEGORIES:
+		if value.lower() == category.lower():
+			return category
+	frappe.throw(_("Choose why the slip is rejected: {0}.").format(" or ".join(ou.REJECT_CATEGORIES)))
+
+
+def _mark_paid(order, now) -> dict:
+	"""Move a locked order to ``paid`` and take its quantity off the listing's stock under the
+	Listing row lock (Order row first, then Listing - the same order as accept). Stock is floored
+	at 0 and never blocks the approval (D11). Returns the stock change for the response."""
+	listing = _lock_listing(order.listing)
+	before = flt(listing.quantity_available)
+	after, shortfall = ou.stock_after_payment(before, order.quantity)
+	# set_value, not listing.save(): a seller-side listing rule (e.g. min order above the stock
+	# left) must never block a payment approval.
+	frappe.db.set_value("Listing", listing.name, "quantity_available", after)
+
+	order.status = ou.PAID
+	order.paid_on = now
+	order.status_deadline = None
+	# Flags and staff requests are moot once the payment is approved; reasons stay as history.
+	order.needs_staff_review = 0
+	order.staff_cancel_requested = 0
+	order.cancel_requested = 0
+	order.save(ignore_permissions=True)
+	return {
+		"listing": listing.name,
+		"unit": order.unit,
+		"stock_before": before,
+		"quantity": flt(order.quantity),
+		"stock_after": after,
+		"shortfall": shortfall,
+		"low_stock_level": flt(listing.low_stock_level),
+	}
+
+
+def _after_stock_drop(stock_update: dict) -> None:
+	"""Low-stock alert to the seller when the approval took the listing under its level. Never
+	raises: the approval is already committed."""
+	try:
+		level = stock_update["low_stock_level"]
+		if level > 0 and stock_update["stock_before"] >= level > stock_update["stock_after"]:
+			from accreage_mart.utils.listing_notify import notify_low_stock
+
+			notify_low_stock(frappe.get_doc("Listing", stock_update["listing"]))
+	except Exception:
+		frappe.log_error(title="Low stock notification after payment approval failed")
+
+
+def _paid_payload(order, user: str, stock_update: dict | None) -> dict:
+	data = _order_detail(order, user)
+	if stock_update:
+		stock_update = {k: v for k, v in stock_update.items() if k not in ("listing", "low_stock_level")}
+	data["stock_update"] = stock_update
+	return data
+
+
+@frappe.whitelist(methods=["POST"])
+def review_payment_proof(
+	proof: str, decision: str, reject_category: str | None = None, reject_reason: str | None = None
+) -> dict:
+	"""The seller (or staff, as a fallback) approves or rejects the waiting slip (D6). The first
+	decision wins: both reviewers lock the order row, and the second sees "Already reviewed".
+
+	- ``reject`` needs ``reject_category`` (see ``REJECT_CATEGORIES``) and ``reject_reason``; the
+	  order goes back to ``confirmed`` with a fresh 72 h for a new slip.
+	- ``approve`` moves the order to ``paid`` and takes its quantity off the listing's stock,
+	  floored at 0; the response's ``stock_update`` reports any shortfall (D11).
+	"""
+	decision = (decision or "").strip().lower()
+	if decision not in (APPROVE, REJECT):
+		frappe.throw(_("Choose approve or reject."))
+	order_name = frappe.db.get_value("Payment Proof", proof, "order") if proof else None
+	if not order_name:
+		frappe.throw(_("Payment slip not found."), frappe.DoesNotExistError)
+
+	doc = _lock_order(order_name)
+	actor = _actor(doc, (ou.SELLER, ou.STAFF), _("Only the seller or staff can review a payment slip."))
+	slip = frappe.get_doc("Payment Proof", proof, for_update=True)
+	if slip.status != ou.PROOF_SUBMITTED:
+		frappe.throw(_("Already reviewed: this payment slip was {0}.").format(slip.status.lower()))
+	_require_status(doc, ou.PAYMENT_REVIEW)
+	_party_deadline(doc, actor)
+	user = frappe.session.user
+	now = now_datetime()
+
+	if decision == REJECT:
+		category = _reject_category(reject_category)
+		why = _reason(reject_reason, required=True, label="a reason for rejecting the slip")
+		ou.assert_transition(doc, ou.CONFIRMED, actor)
+		with _atomic("review_payment_proof"):
+			slip.update(
+				{
+					"status": ou.PROOF_REJECTED,
+					"reviewed_by": user,
+					"reviewed_on": now,
+					"reject_category": category,
+					"reject_reason": why,
+				}
+			)
+			slip.save(ignore_permissions=True)
+			doc.status = ou.CONFIRMED
+			doc.status_deadline = ou.deadline_for(ou.CONFIRMED, now)
+			doc.save(ignore_permissions=True)
+		_notify_proof_rejected(doc, actor, category, why)
+		doc.reload()
+		return _paid_payload(doc, user, None)
+
+	ou.assert_transition(doc, ou.PAID, actor)
+	with _atomic("review_payment_proof"):
+		slip.update({"status": ou.PROOF_APPROVED, "reviewed_by": user, "reviewed_on": now})
+		slip.save(ignore_permissions=True)
+		stock_update = _mark_paid(doc, now)
+	_after_stock_drop(stock_update)
+	_notify_payment_approved(doc, actor)
+	doc.reload()
+	return _paid_payload(doc, user, stock_update)
+
+
+@frappe.whitelist(methods=["POST"])
+def approve_flagged_payment(order: str, reason: str) -> dict:
+	"""D13 - a rejected slip was not replaced within 72 h, so the order is flagged for staff.
+	Staff who find the payment did arrive approve it here: the order moves to ``paid`` with the
+	same stock rule as a slip approval. A reason is required; it is kept as an order comment and
+	sent to both parties. (The rejected slips stay rejected - reviewed proofs never change.)"""
+	require_staff()
+	doc = _lock_order(order)
+	_require_status(doc, ou.CONFIRMED)
+	if not doc.needs_staff_review:
+		frappe.throw(_("This order is not waiting for a staff decision."))
+	why = _reason(reason, required=True, label="a reason for approving the payment")
+	ou.assert_transition(doc, ou.PAID, ou.STAFF)
+	user = frappe.session.user
+	with _atomic("approve_flagged_payment"):
+		stock_update = _mark_paid(doc, now_datetime())
+		doc.add_comment("Info", f"Payment approved by staff ({user}) after review. Reason: {why}")
+	_after_stock_drop(stock_update)
+	_notify_payment_approved(doc, ou.STAFF, reason=why)
+	doc.reload()
+	return _paid_payload(doc, user, stock_update)
+
+
+# -- staff payments queue (Story 8.3, used by 8.8) -------------------------------------------------
+
+QUEUE_LIMIT = 100
+QUEUE_LIMIT_MAX = 500
+
+
+def _latest_proof(order) -> dict | None:
+	row = frappe.get_all(
+		"Payment Proof",
+		filters={"order": order.get("name")},
+		fields=list(PROOF_FIELDS),
+		order_by="submitted_on desc, creation desc",
+		limit_page_length=1,
+		ignore_permissions=True,
+	)
+	return _proof_payload(row[0], order) if row else None
+
+
+def _queue_orders(filters: dict, limit: int, viewer: str) -> dict:
+	total = frappe.db.count("Order", filters)
+	rows = frappe.get_all(
+		"Order",
+		filters=filters,
+		fields=list(ORDER_LIST_FIELDS),
+		order_by="modified asc, name asc",  # oldest first
+		limit_page_length=limit,
+		ignore_permissions=True,
+	)
+	items = [{"order": _order_summary(row, viewer), "latest_proof": _latest_proof(row)} for row in rows]
+	return {"items": items, "total": total}
+
+
+@frappe.whitelist()
+def list_pending_proofs(limit: int = QUEUE_LIMIT) -> dict:
+	"""The staff payments queue, oldest first:
+
+	- ``awaiting_review`` - slips waiting for a decision (staff may review them, D6);
+	- ``needs_staff_review`` - confirmed orders whose rejected slip was not replaced in time (D13):
+	  ``approve_flagged_payment`` or ``cancel_order``;
+	- ``staff_cancel_requests`` - sellers asking staff to cancel after a rejected slip:
+	  ``resolve_staff_cancellation_request``.
+	"""
+	require_staff()
+	viewer = frappe.session.user
+	limit = max(1, min(cint(limit) or QUEUE_LIMIT, QUEUE_LIMIT_MAX))
+
+	waiting = frappe.get_all(
+		"Order",
+		filters={"status": ou.PAYMENT_REVIEW},
+		fields=list(ORDER_LIST_FIELDS),
+		ignore_permissions=True,
+	)
+	by_name = {row.name: row for row in waiting}
+	proofs = frappe.get_all(
+		"Payment Proof",
+		filters={"status": ou.PROOF_SUBMITTED, "order": ["in", list(by_name) or [""]]},
+		fields=list(PROOF_FIELDS),
+		order_by="submitted_on asc, creation asc",
+		ignore_permissions=True,
+	)
+	awaiting = [
+		{
+			"proof": _proof_payload(proof, by_name[proof.order]),
+			"order": _order_summary(by_name[proof.order], viewer),
+		}
+		for proof in proofs[:limit]
+	]
+
+	flagged = _queue_orders({"status": ou.CONFIRMED, "needs_staff_review": 1}, limit, viewer)
+	requests = _queue_orders({"status": ou.CONFIRMED, "staff_cancel_requested": 1}, limit, viewer)
+	return {
+		"awaiting_review": {"items": awaiting, "total": len(proofs)},
+		"needs_staff_review": flagged,
+		"staff_cancel_requests": requests,
+		"counts": {
+			"awaiting_review": len(proofs),
+			"needs_staff_review": flagged["total"],
+			"staff_cancel_requests": requests["total"],
+		},
+	}
+
+
+# -- order stats (D12) -----------------------------------------------------------------------------
+
+SCOPE_SELLER = "seller"
+SCOPE_PLATFORM = "platform"
+SALE_STATUSES = (ou.PAID, ou.DELIVERED, ou.COMPLETED)  # payment approved
+
+
+@frappe.whitelist()
+def get_order_stats(scope: str | None = None) -> dict:
+	"""Order counts by status and sales figures (D12). ``scope`` is ``seller`` (orders on the
+	caller's listings) or ``platform`` (every order, staff only); by default staff get the platform
+	and sellers their own.
+
+	``completed_sales`` / ``completed_orders`` count ``completed`` orders only (the sales figure);
+	``paid_value`` adds orders whose payment is approved but not yet completed.
+	"""
+	user = _require_login()
+	staff = lu.is_staff_or_admin(user)
+	scope = (scope or "").strip().lower() or (SCOPE_PLATFORM if staff else SCOPE_SELLER)
+	if scope not in (SCOPE_SELLER, SCOPE_PLATFORM):
+		frappe.throw(_("Choose the seller or platform scope."))
+
+	order = frappe.qb.DocType("Order")
+	query = (
+		frappe.qb.from_(order)
+		.select(order.status, Count(order.name).as_("orders"), Sum(order.total_price).as_("value"))
+		.groupby(order.status)
+	)
+	if scope == SCOPE_PLATFORM:
+		if not staff:
+			frappe.throw(_("Only staff can see platform-wide order figures."), frappe.PermissionError)
+	else:
+		profile = lu.seller_profile_of(user)
+		if not profile or not frappe.db.get_value("Seller Profile", profile, "verified"):
+			frappe.throw(_("Only verified sellers have order figures."), frappe.PermissionError)
+		query = query.where(order.seller == profile)
+
+	rows = {row.status: row for row in query.run(as_dict=True)}
+	counts = {status: cint(rows[status].orders) if status in rows else 0 for status in ou.STATUSES}
+
+	def value_of(*statuses) -> float:
+		return sum(flt(rows[s].value) for s in statuses if s in rows)
+
+	return {
+		"scope": scope,
+		"counts": counts,
+		"total_orders": sum(counts.values()),
+		"active_orders": sum(counts[s] for s in ou.ACTIVE_STATUSES),
+		"awaiting_payment_review": counts[ou.PAYMENT_REVIEW],
+		"completed_orders": counts[ou.COMPLETED],
+		"completed_sales": value_of(ou.COMPLETED),
+		"paid_orders": sum(counts[s] for s in SALE_STATUSES),
+		"paid_value": value_of(*SALE_STATUSES),
+	}
+
+
+# -- notifications (Story 8.3) ---------------------------------------------------------------------
+
+
+def _slip_summary(proof, order) -> str:
+	summary = (
+		f"{_rs(proof.amount_paid)} paid on {frappe.utils.formatdate(proof.paid_on)} from {proof.paid_from_bank} "
+		f"(reference {proof.transfer_reference})."
+	)
+	if flt(proof.amount_paid, 2) != flt(order.total_price, 2):
+		summary += f" This differs from the order total of {_rs(order.total_price)}."
+	return summary
+
+
+def _notify_proof_submitted(order, proof) -> None:
+	name = _buyer_display_name(order.buyer)
+	differs = flt(proof.amount_paid, 2) != flt(order.total_price, 2)
+	context = {
+		"buyer_name": name,
+		"amount_paid": _rs(proof.amount_paid),
+		"paid_on": frappe.utils.formatdate(proof.paid_on),
+		"paid_from_bank": proof.paid_from_bank,
+		"transfer_reference": proof.transfer_reference,
+		"total": _rs(order.total_price),
+		"amount_differs": differs,
+	}
+	base = f"{name} uploaded a payment slip for order {order.name} ({_what(order)}): {_slip_summary(proof, order)}"
+	_send(
+		"payment_proof_submitted",
+		lu.seller_user_of(order.seller),
+		order,
+		f"Payment slip to review - order {order.name}",
+		f"{base} Check that the money reached your account, then approve or reject the slip.",
+		{**context, "for_staff": False},
+	)
+	for user in ou.staff_users():
+		_send(
+			"payment_proof_submitted",
+			user,
+			order,
+			f"New payment slip - order {order.name}",
+			f"{base} The seller reviews it first; you can review it in the payments queue.",
+			{**context, "for_staff": True},
+		)
+
+
+def _notify_proof_rejected(order, actor: str, category: str, reason: str) -> None:
+	who = "Accreage Mart staff" if actor == ou.STAFF else _seller_display_name(order.seller)
+	context = {
+		"reviewer_name": who,
+		"reject_category": category,
+		"reason": reason,
+		"hours": ou.PAYMENT_HOURS,
+	}
+	_send(
+		"payment_proof_rejected",
+		order.buyer,
+		order,
+		f"Payment slip rejected - order {order.name}",
+		f"{who} rejected your payment slip for order {order.name} ({_what(order)}). "
+		f"Why: {category}. {_sentence(reason)} Upload a new slip within {ou.PAYMENT_HOURS} hours.",
+		{**context, "for_seller": False},
+	)
+	if actor == ou.STAFF:
+		_send(
+			"payment_proof_rejected",
+			lu.seller_user_of(order.seller),
+			order,
+			f"Staff rejected the payment slip - order {order.name}",
+			f"Accreage Mart staff rejected the buyer's payment slip for order {order.name} ({_what(order)}). "
+			f"Why: {category}. {_sentence(reason)} The buyer has {ou.PAYMENT_HOURS} hours to upload a new one.",
+			{**context, "for_seller": True},
+		)
+
+
+def _notify_payment_approved(order, actor: str, reason: str | None = None) -> None:
+	"""To the buyer; to the seller too when staff made the call (the seller must now deliver)."""
+	who = "Accreage Mart staff" if actor == ou.STAFF else _seller_display_name(order.seller)
+	context = {"reviewer_name": who, "total": _rs(order.total_price), "reason": reason or None}
+	message = (
+		f"{who} approved your payment of {_rs(order.total_price)} for order {order.name} ({_what(order)})."
+	)
+	if reason:
+		message += f" Note: {_sentence(reason)}"
+	_send(
+		"payment_proof_approved",
+		order.buyer,
+		order,
+		f"Payment approved - order {order.name}",
+		f"{message} The seller will now arrange delivery.",
+		{**context, "for_seller": False},
+		sms=True,
+	)
+	if actor == ou.STAFF:
+		seller_message = (
+			f"Accreage Mart staff approved the buyer's payment for order {order.name} ({_what(order)})."
+		)
+		if reason:
+			seller_message += f" Note: {_sentence(reason)}"
+		_send(
+			"payment_proof_approved",
+			lu.seller_user_of(order.seller),
+			order,
+			f"Payment approved by staff - order {order.name}",
+			f"{seller_message} Please arrange delivery and mark the order delivered.",
+			{**context, "for_seller": True},
+			sms=True,
+		)

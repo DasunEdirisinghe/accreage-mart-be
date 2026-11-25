@@ -368,6 +368,60 @@ EMAIL_TEMPLATES = {
 			"<p>Reason: {{ reason }}</p>"
 		),
 	},
+	"payment_proof_submitted": {
+		"subject": "Payment slip to review - order {{ order }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ buyer_name }}</strong> uploaded a payment slip for order {{ order }} "
+			"({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>).</p>"
+			"<p>Amount paid: <strong>{{ amount_paid }}</strong> on {{ paid_on }} from {{ paid_from_bank }} "
+			"(reference {{ transfer_reference }}).</p>"
+			"{% if amount_differs %}<p><strong>This differs from the order total of {{ total }}.</strong></p>"
+			"{% endif %}"
+			"{% if for_staff %}"
+			"<p>The seller reviews it first; you can review it in the payments queue.</p>"
+			"{% else %}"
+			"<p>Check that the money reached your account, then approve or reject the slip.</p>"
+			"{% endif %}"
+		),
+	},
+	"payment_proof_rejected": {
+		"subject": "Payment slip rejected - order {{ order }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"{% if for_seller %}"
+			"<p>Accreage Mart staff rejected the buyer's payment slip for order {{ order }} "
+			"({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>).</p>"
+			"{% else %}"
+			"<p><strong>{{ reviewer_name }}</strong> rejected your payment slip for order {{ order }} "
+			"({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>).</p>"
+			"{% endif %}"
+			"<p>Why: <strong>{{ reject_category }}</strong></p>"
+			"<p>Reason: {{ reason }}</p>"
+			"{% if for_seller %}"
+			"<p>The buyer has {{ hours }} hours to upload a new slip.</p>"
+			"{% else %}"
+			"<p>Upload a new payment slip within {{ hours }} hours.</p>"
+			"{% endif %}"
+		),
+	},
+	"payment_proof_approved": {
+		"subject": "Payment approved - order {{ order }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"{% if for_seller %}"
+			"<p>Accreage Mart staff approved the buyer's payment for order {{ order }} "
+			"({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>).</p>"
+			"{% if reason %}<p>Note: {{ reason }}</p>{% endif %}"
+			"<p>Please arrange delivery and mark the order delivered.</p>"
+			"{% else %}"
+			"<p><strong>{{ reviewer_name }}</strong> approved your payment of <strong>{{ total }}</strong> "
+			"for order {{ order }} ({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>).</p>"
+			"{% if reason %}<p>Note: {{ reason }}</p>{% endif %}"
+			"<p>The seller will now arrange delivery.</p>"
+			"{% endif %}"
+		),
+	},
 }
 
 

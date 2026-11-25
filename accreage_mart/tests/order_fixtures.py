@@ -142,6 +142,22 @@ def purge_orders(*emails: str) -> None:
 	listings = frappe.get_all("Listing", filters={"title": ["like", "ZZ Test%"]}, pluck="name")
 	orders = frappe.get_all("Order", filters={"listing": ["in", listings or [""]]}, pluck="name")
 	if orders:
+		proofs = frappe.get_all("Payment Proof", filters={"order": ["in", orders]}, pluck="name")
+		if proofs:
+			# Slip files (and their bytes on disk) attached to the test proofs.
+			for name in frappe.get_all(
+				"File",
+				filters={"attached_to_doctype": "Payment Proof", "attached_to_name": ["in", proofs]},
+				pluck="name",
+			):
+				try:
+					frappe.delete_doc("File", name, force=True, ignore_permissions=True)
+				except Exception:
+					frappe.db.delete("File", {"name": name})
+			frappe.db.delete(
+				"Comment", {"reference_doctype": "Payment Proof", "reference_name": ["in", proofs]}
+			)
+		frappe.db.delete("Comment", {"reference_doctype": "Order", "reference_name": ["in", orders]})
 		frappe.db.delete("Order Offer", {"order": ["in", orders]})
 		frappe.db.delete("Payment Proof", {"order": ["in", orders]})
 		frappe.db.delete("Notification Log", {"document_type": "Order", "document_name": ["in", orders]})

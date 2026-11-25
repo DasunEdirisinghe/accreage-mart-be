@@ -322,6 +322,72 @@ def stock_impact(order) -> dict:
 	}
 
 
+def stock_after_payment(stock_now, quantity) -> tuple[float, float]:
+	"""``(stock_after, shortfall)`` when an order of ``quantity`` is paid (D7, D11): stock drops by the
+	order quantity and is floored at 0; ``shortfall`` is how much the seller is short."""
+	stock_now, quantity = flt(stock_now), flt(quantity)
+	return max(0.0, stock_now - quantity), max(0.0, quantity - stock_now)
+
+
+# -- payment slips (REQ-5/6, D10) ------------------------------------------------------------------
+
+MAX_SLIP_BYTES = 5 * 1024 * 1024
+SLIP_FILE_PREFIX = "ppf-"
+SLIP_EXTENSIONS = {"jpeg": "jpg", "png": "png", "pdf": "pdf"}
+SLIP_MIME_TYPES = {"jpeg": "image/jpeg", "png": "image/png", "pdf": "application/pdf"}
+DETAIL_MAX = 140  # paid_from_bank, transfer_reference
+
+
+def detect_slip_type(content: bytes) -> str | None:
+	"""jpeg / png / pdf from the file's own bytes, never from its name or declared type."""
+	if content.startswith(b"%PDF-"):
+		return "pdf"
+	from accreage_mart.utils.listing_images import detect_image_type
+
+	kind = detect_image_type(content)
+	return kind if kind in ("jpeg", "png") else None
+
+
+def validate_slip(content: bytes | None) -> str:
+	"""Throw unless ``content`` is a JPG, PNG or PDF of at most 5 MB. Images must really decode.
+	Returns the kind (jpeg / png / pdf)."""
+	if not content:
+		frappe.throw(_("Please attach your payment slip."))
+	if len(content) > MAX_SLIP_BYTES:
+		frappe.throw(_("The payment slip can be at most 5 MB."))
+	kind = detect_slip_type(content)
+	if not kind:
+		frappe.throw(_("The payment slip must be a JPG, PNG or PDF file."))
+	if kind == "pdf":
+		_verify_pdf(content)
+	else:
+		from accreage_mart.utils.listing_images import _verify_decodes
+
+		_verify_decodes(content, kind)
+	return kind
+
+
+def _verify_pdf(content: bytes) -> None:
+	"""The bytes must parse as a PDF without scripts. Frappe's File runs the same pypdf check on
+	save and would otherwise fail with a raw parser error on a broken file."""
+	from frappe.utils.pdf import pdf_contains_js
+
+	try:
+		has_js = pdf_contains_js(content)
+	except Exception:
+		frappe.throw(_("This file is not a valid PDF."))
+	if has_js:
+		frappe.throw(_("PDF files with scripts are not allowed."))
+
+
+def reviewer_role(proof, order) -> str | None:
+	"""``seller`` / ``staff`` - who reviewed ``proof`` (never exposes a staff member's identity)."""
+	reviewer = proof.get("reviewed_by")
+	if not reviewer:
+		return None
+	return SELLER if lu.owns_listing(order.get("seller"), reviewer) else STAFF
+
+
 # -- cancellation (D5, D13) ------------------------------------------------------------------------
 
 
