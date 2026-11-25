@@ -18,6 +18,7 @@ from accreage_mart.tests.listing_fixtures import (
 	purge,
 	track_file,
 )
+from accreage_mart.tests.order_fixtures import set_bank_details
 from accreage_mart.utils import listing_images as images
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -36,6 +37,9 @@ class ImageTestCase(FrappeTestCase):
 		purge(SELLER_A, SELLER_B)
 		self.seller = make_seller(SELLER_A)
 		self.other = make_seller(SELLER_B)
+		# D16 (Epic 08): a seller needs bank details to create / duplicate / resubmit a listing.
+		set_bank_details(self.seller)
+		set_bank_details(self.other)
 		self.category = make_category()
 
 	def tearDown(self):

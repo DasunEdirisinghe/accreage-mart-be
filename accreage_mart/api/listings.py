@@ -22,6 +22,10 @@ duplicate_listing          owner             new listing from an Archived one
 update_stock               owner             Direct only; one low-stock email when it crosses
 =========================  ================  ===================================================
 
+D16 (Epic 08): ``create_listing``, ``duplicate_listing`` and ``resubmit_listing`` are refused until the
+seller has saved all four bank details ("Add your bank details first, so buyers can pay you."). The
+other actions keep working without them.
+
 Sellers never delete listings and never set status directly: every status change here runs inside
 ``system_write`` after the ownership and state checks. Review decisions (approve / reject /
 suspend) are Story 4.4.
@@ -140,6 +144,18 @@ def _require_acknowledged(acknowledged) -> None:
 		frappe.throw(_("Please confirm that you have read the warning."))
 
 
+BANK_DETAILS_REQUIRED = "Add your bank details first, so buyers can pay you."
+
+
+def _require_bank_details(profile: str) -> None:
+	"""D16 (Epic 08) - a seller can't put goods on sale (create, duplicate or resubmit a listing)
+	until all four bank fields are saved: buyers pay the seller directly."""
+	from accreage_mart.utils.order import has_bank_details
+
+	if not has_bank_details(profile):
+		frappe.throw(_(BANK_DETAILS_REQUIRED))
+
+
 def _maybe_notify_low_stock(listing, old_quantity: float) -> None:
 	level = flt(listing.low_stock_level)
 	if level > 0 and flt(old_quantity) >= level > flt(listing.quantity_available):
@@ -182,6 +198,7 @@ def _set_status(listing, status: str) -> None:
 
 
 def _create(profile: str, values: dict, auction_terms: dict, acknowledged) -> dict:
+	_require_bank_details(profile)
 	selling_type = values.get("selling_type")
 	if selling_type == lu.AUCTION:
 		_require_acknowledged_auction(acknowledged)
@@ -408,9 +425,11 @@ def archive_listing(name: str, acknowledged: int = 0) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def resubmit_listing(name: str, note: str | None = None) -> dict:
-	listing = _owned_listing(name, lu.require_seller())
+	profile = lu.require_seller()
+	listing = _owned_listing(name, profile)
 	if listing.status != lu.REJECTED:
 		frappe.throw(_("Only a rejected listing can be resubmitted."))
+	_require_bank_details(profile)
 
 	auction = _auction_of(listing)
 	if auction:

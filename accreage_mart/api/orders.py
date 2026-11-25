@@ -72,6 +72,22 @@ list_pending_proofs      staff / admin       the payments queue, oldest first
 get_order_stats          seller / staff      counts by status + sales; seller scope or platform
 =======================  ==================  ==================================================
 
+Guard matrix (Story 8.4)
+------------------------
+=================  ======================  ==============================================================
+Endpoint           Caller                  Notes
+=================  ======================  ==============================================================
+mark_delivered     seller                  paid only -> delivered; the buyer gets 7 days to confirm
+confirm_received   buyer                   delivered only, before the 7-day deadline -> completed;
+                                           invoice number INV-.YYYY.-.##### + PDF from the "Order
+                                           Invoice" Print Format, attached once as a private File
+get_invoice        buyer / seller / staff  completed only; downloads the PDF (made on demand if the
+                                           render at completion failed)
+=================  ======================  ==============================================================
+
+``complete_order(doc, actor)`` is the shared completion step (buyer confirm, and the 8.5 auto-complete
+with actor ``system``).
+
 Every order payload carries ``status_deadline``, ``action_by`` (buyer / seller / staff / none) and
 ``on_expiry`` (cancel / staff_review / auto_complete / null) so both parties can show the same
 countdown (D14).
@@ -117,6 +133,8 @@ ORDER_LIST_FIELDS = (
 	"cancelled_by",
 	"confirmed_on",
 	"paid_on",
+	"staff_payment_approved_by",
+	"staff_payment_approval_reason",
 	"delivered_on",
 	"completed_on",
 	"invoice_no",
@@ -330,6 +348,8 @@ def _order_summary(row, viewer: str) -> dict:
 	data["seller"] = _seller_summary(row.get("seller"))
 	data["buyer"] = _buyer_summary(row.get("buyer"), role)
 	data["viewer_role"] = role
+	if role != ou.STAFF:
+		data.pop("staff_payment_approved_by")  # parties see the reason, not which staff member
 	data.update(ou.deadline_info(row))
 	return data
 
@@ -1455,8 +1475,9 @@ def review_payment_proof(
 def approve_flagged_payment(order: str, reason: str) -> dict:
 	"""D13 - a rejected slip was not replaced within 72 h, so the order is flagged for staff.
 	Staff who find the payment did arrive approve it here: the order moves to ``paid`` with the
-	same stock rule as a slip approval. A reason is required; it is kept as an order comment and
-	sent to both parties. (The rejected slips stay rejected - reviewed proofs never change.)"""
+	same stock rule as a slip approval. A reason is required; it is stored on the order
+	(``staff_payment_approved_by`` / ``staff_payment_approval_reason``, unchangeable once set) and sent
+	to both parties. (The rejected slips stay rejected - reviewed proofs never change.)"""
 	require_staff()
 	doc = _lock_order(order)
 	_require_status(doc, ou.CONFIRMED)
@@ -1466,8 +1487,9 @@ def approve_flagged_payment(order: str, reason: str) -> dict:
 	ou.assert_transition(doc, ou.PAID, ou.STAFF)
 	user = frappe.session.user
 	with _atomic("approve_flagged_payment"):
-		stock_update = _mark_paid(doc, now_datetime())
-		doc.add_comment("Info", f"Payment approved by staff ({user}) after review. Reason: {why}")
+		doc.staff_payment_approved_by = user
+		doc.staff_payment_approval_reason = why
+		stock_update = _mark_paid(doc, now_datetime())  # saves the order with the approval
 	_after_stock_drop(stock_update)
 	_notify_payment_approved(doc, ou.STAFF, reason=why)
 	doc.reload()
@@ -1719,3 +1741,166 @@ def _notify_payment_approved(order, actor: str, reason: str | None = None) -> No
 			{**context, "for_seller": True},
 			sms=True,
 		)
+
+
+# -- delivery, completion and invoice (Story 8.4) --------------------------------------------------
+
+
+@frappe.whitelist(methods=["POST"])
+def mark_delivered(order: str) -> dict:
+	"""The seller says the goods were handed over (only once the payment is approved, ``paid``).
+	The buyer then has 7 days to confirm receipt, after which the order completes by itself."""
+	doc = _lock_order(order)
+	_actor(doc, (ou.SELLER,), _("Only the seller can mark this order delivered."))
+	if doc.status == ou.DELIVERED:
+		frappe.throw(_("This order is already marked delivered."))
+	_require_status(doc, ou.PAID)
+	_party_deadline(doc, ou.SELLER)
+	ou.assert_transition(doc, ou.DELIVERED, ou.SELLER)
+	now = now_datetime()
+	with _atomic("mark_delivered"):
+		doc.status = ou.DELIVERED
+		doc.delivered_on = now
+		doc.status_deadline = ou.deadline_for(ou.DELIVERED, now)
+		doc.save(ignore_permissions=True)
+	_notify_delivered(doc)
+	doc.reload()
+	return _order_detail(doc, frappe.session.user)
+
+
+@frappe.whitelist(methods=["POST"])
+def confirm_received(order: str) -> dict:
+	"""The buyer confirms the goods arrived: the order is ``completed`` and its invoice is made."""
+	doc = _lock_order(order)
+	_actor(doc, (ou.BUYER,), _("Only the buyer can confirm receipt of this order."))
+	if doc.status == ou.COMPLETED:
+		frappe.throw(_("This order is already completed."))
+	_require_status(doc, ou.DELIVERED)
+	_party_deadline(doc, ou.BUYER)
+	complete_order(doc, ou.BUYER)
+	doc.reload()
+	return _order_detail(doc, frappe.session.user)
+
+
+def complete_order(doc, actor: str) -> None:
+	"""Move a row-locked ``delivered`` order to ``completed`` and make its invoice.
+
+	``actor`` is ``buyer`` (confirm_received) or ``system`` (the 7-day auto-complete, Story 8.5 - it
+	should lock the order with ``_lock_order`` and re-check the status/deadline first). Commits.
+
+	The status change and the invoice number commit together. The PDF is rendered right after, in
+	its own step: if rendering fails, the order still completes (the failure is logged) and the
+	invoice is made on the first ``get_invoice`` instead - never twice (``ensure_invoice``).
+	Both parties are notified."""
+	ou.assert_transition(doc, ou.COMPLETED, actor)
+	from accreage_mart.utils import invoice as inv
+
+	with _atomic("complete_order"):
+		doc.status = ou.COMPLETED
+		doc.completed_on = now_datetime()
+		doc.status_deadline = None
+		if not doc.invoice_no:
+			doc.invoice_no = inv.new_invoice_no()
+		doc.save(ignore_permissions=True)
+	try:
+		ensure_invoice(doc.name)
+	except Exception:
+		frappe.log_error(title=f"Invoice for order {doc.name} failed")
+	doc.reload()
+	_notify_completed(doc, actor)
+
+
+def ensure_invoice(order_name: str):
+	"""The completed order's invoice PDF, made now if it doesn't exist yet - exactly once: the
+	Order row is locked and ``invoice_file`` re-checked under the lock. Commits. Returns the
+	(locked, fresh) Order."""
+	from accreage_mart.utils import invoice as inv
+
+	doc = _lock_order(order_name)
+	if doc.invoice_file:
+		frappe.db.commit()  # release the row lock
+		return doc
+	with _atomic("ensure_invoice"):
+		inv.attach_invoice(doc)
+	return doc
+
+
+@frappe.whitelist()
+def get_invoice(order: str):
+	"""Download the order's invoice PDF - for its buyer, its seller and staff only, once the order
+	is completed."""
+	from accreage_mart.utils import invoice as inv
+
+	doc = _get_order_doc(order)
+	_actor(doc, (ou.BUYER, ou.SELLER, ou.STAFF), _("You do not have access to this invoice."))
+	if doc.status != ou.COMPLETED:
+		frappe.throw(_("The invoice is ready once the order is completed."))
+	if not doc.invoice_file:
+		doc = ensure_invoice(doc.name)
+	file = inv.invoice_file_doc(doc)
+	if not file:
+		frappe.throw(_("The invoice file is missing. Please contact staff."), frappe.DoesNotExistError)
+	frappe.local.response.filename = f"{doc.invoice_no}.pdf"
+	frappe.local.response.filecontent = file.get_content()
+	frappe.local.response.type = "download"
+	frappe.local.response.content_type = "application/pdf"
+
+
+# -- notifications (Story 8.4) ---------------------------------------------------------------------
+
+
+def _notify_delivered(order) -> None:
+	name = _seller_display_name(order.seller)
+	days = ou.DELIVERY_CONFIRM_DAYS
+	_send(
+		"order_delivered",
+		order.buyer,
+		order,
+		f"Order {order.name} delivered",
+		f"{name} marked order {order.name} ({_what(order)}) as delivered. Please confirm you received the "
+		f"goods within {days} days; if you don't, the order is completed automatically.",
+		{"seller_name": name, "days": days},
+		sms=True,
+	)
+
+
+def _notify_completed(order, actor: str) -> None:
+	"""Both parties: the order is completed and the invoice is on the order page."""
+	auto = actor == ou.SYSTEM
+	buyer_name = _buyer_display_name(order.buyer)
+	seller_name = _seller_display_name(order.seller)
+	if auto:
+		how = (
+			f"was completed automatically {ou.DELIVERY_CONFIRM_DAYS} days after delivery, "
+			"as receipt was not confirmed"
+		)
+	else:
+		how = f"was completed: {buyer_name} confirmed receiving the goods"
+	base = f"Order {order.name} ({_what(order)}, {_rs(order.total_price)}) {how}."
+	context = {
+		"auto": auto,
+		"buyer_name": buyer_name,
+		"seller_name": seller_name,
+		"total": _rs(order.total_price),
+		"invoice_no": order.invoice_no,
+		"days": ou.DELIVERY_CONFIRM_DAYS,
+	}
+	invoice = f" Invoice {order.invoice_no} is ready to download on the order page."
+	_send(
+		"order_completed",
+		order.buyer,
+		order,
+		f"Order {order.name} completed",
+		base + invoice,
+		{**context, "for_seller": False},
+		sms=True,
+	)
+	_send(
+		"order_completed",
+		lu.seller_user_of(order.seller),
+		order,
+		f"Order {order.name} completed",
+		base + invoice,
+		{**context, "for_seller": True},
+		sms=True,
+	)

@@ -74,6 +74,9 @@ app_license = "mit"
 # ----------
 
 # add methods and filters to jinja environment
+jinja = {
+	"methods": ["accreage_mart.utils.invoice.invoice_context"],
+}
 # jinja = {
 # 	"methods": "accreage_mart.utils.jinja_methods",
 # 	"filters": "accreage_mart.utils.jinja_filters"

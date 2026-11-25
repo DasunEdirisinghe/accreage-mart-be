@@ -447,12 +447,29 @@ class TestFlaggedPayment(PaymentTestCase):
 		self.assertFalse(result["needs_staff_review"])
 		self.assertEqual(result["stock_update"]["stock_after"], 480)
 		self.assertEqual(self.stock(), 480)
-		comments = frappe.get_all(
-			"Comment", filters={"reference_doctype": "Order", "reference_name": order}, pluck="content"
-		)
-		self.assertTrue(any("Seller confirmed by phone" in c for c in comments))
+		self.assertEqual(result["staff_payment_approved_by"], STAFF)
+		self.assertEqual(result["staff_payment_approval_reason"], "Seller confirmed by phone")
 		rows = order_notifications(order, "payment_proof_approved")
 		self.assertEqual(sorted(r.for_user for r in rows), sorted([BUYER_A, SELLER_A]))
+
+	def test_parties_see_the_reason_but_not_which_staff_member(self):
+		order = self.flagged()
+		self.as_user(STAFF, api.approve_flagged_payment, order, "Seller confirmed by phone")
+		for user in (BUYER_A, SELLER_A):
+			view = self.as_user(user, api.get_order, order)
+			self.assertEqual(view["staff_payment_approval_reason"], "Seller confirmed by phone")
+			self.assertNotIn("staff_payment_approved_by", view)
+
+	def test_the_approval_record_cannot_be_changed(self):
+		order = self.flagged()
+		self.as_user(STAFF, api.approve_flagged_payment, order, "Seller confirmed by phone")
+		doc = self.order(order)
+		doc.staff_payment_approval_reason = "Something else"
+		with lu.system_write(), self.assertRaisesRegex(frappe.ValidationError, "cannot be changed"):
+			doc.save(ignore_permissions=True)
+		self.assertEqual(
+			frappe.db.get_value("Order", order, "staff_payment_approval_reason"), "Seller confirmed by phone"
+		)
 
 	def test_guards(self):
 		order = self.flagged()

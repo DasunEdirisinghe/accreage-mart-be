@@ -17,6 +17,7 @@ from accreage_mart.tests.listing_fixtures import (
 	set_status,
 	start_auction_now,
 )
+from accreage_mart.tests.order_fixtures import set_bank_details
 from accreage_mart.utils import listing as lu
 from accreage_mart.utils.profile import create_platform_user
 
@@ -30,6 +31,9 @@ class ReviewTestCase(FrappeTestCase):
 		purge(SELLER_A, SELLER_B, STAFF)
 		self.seller = make_seller(SELLER_A)
 		self.other = make_seller(SELLER_B)
+		# D16 (Epic 08): a seller needs bank details to create / duplicate / resubmit a listing.
+		set_bank_details(self.seller)
+		set_bank_details(self.other)
 		self.category = make_category()
 		create_platform_user(email=STAFF, full_name="Test Staff", role="Staff", status="active")
 

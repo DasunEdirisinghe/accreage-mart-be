@@ -34,6 +34,8 @@
   "timeline_section",
   "confirmed_on",
   "paid_on",
+  "staff_payment_approved_by",
+  "staff_payment_approval_reason",
   "column_break_timeline",
   "delivered_on",
   "completed_on",
@@ -225,6 +227,20 @@
    "label": "Paid On"
   },
   {
+   "description": "Set when staff approve the payment of an order flagged for staff review (D13). Never changes once set.",
+   "fieldname": "staff_payment_approved_by",
+   "fieldtype": "Link",
+   "label": "Staff Payment Approved By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "staff_payment_approval_reason",
+   "fieldtype": "Small Text",
+   "label": "Staff Payment Approval Reason",
+   "read_only": 1
+  },
+  {
    "fieldname": "column_break_timeline",
    "fieldtype": "Column Break"
   },
@@ -256,7 +272,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-11-25 00:00:00.000000",
+ "modified": "2026-11-26 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Accreage Mart",
  "name": "Order",

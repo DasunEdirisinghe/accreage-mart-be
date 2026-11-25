@@ -20,6 +20,26 @@ class Order(Document):
 			frappe.throw(_("An auction order must link its auction."))
 		if not self.is_new():
 			self._guard_locked_price()
+			self._guard_staff_payment_approval()
+			self._guard_invoice()
+
+	def _guard_invoice(self):
+		"""REQ-9 - an order's invoice number and invoice file, once set, never change."""
+		before = self.get_doc_before_save()
+		if not before:
+			return
+		for field in ("invoice_no", "invoice_file"):
+			if before.get(field) and self.get(field) != before.get(field):
+				frappe.throw(_("An order's invoice cannot be changed."))
+
+	def _guard_staff_payment_approval(self):
+		"""D13 audit trail - a staff payment approval, once recorded, never changes."""
+		before = self.get_doc_before_save()
+		if not before or not before.staff_payment_approved_by:
+			return
+		for field in ("staff_payment_approved_by", "staff_payment_approval_reason"):
+			if self.get(field) != before.get(field):
+				frappe.throw(_("A staff payment approval cannot be changed."))
 
 	def _guard_locked_price(self):
 		"""REQ-12 - quantity and the agreed price never change once the order is confirmed."""

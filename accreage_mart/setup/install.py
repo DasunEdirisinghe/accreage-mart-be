@@ -422,6 +422,27 @@ EMAIL_TEMPLATES = {
 			"{% endif %}"
 		),
 	},
+	"order_delivered": {
+		"subject": "Order {{ order }} delivered - please confirm",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ seller_name }}</strong> marked order {{ order }} "
+			"({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>) as delivered.</p>"
+			"<p>Please confirm you received the goods within {{ days }} days. If you don't, the order "
+			"is completed automatically.</p>"
+		),
+	},
+	"order_completed": {
+		"subject": "Order {{ order }} completed - invoice {{ invoice_no }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Order {{ order }} ({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>, "
+			"<strong>{{ total }}</strong>) "
+			"{% if auto %}was completed automatically {{ days }} days after delivery, as receipt was not "
+			"confirmed.{% else %}was completed: {{ buyer_name }} confirmed receiving the goods.{% endif %}</p>"
+			"<p>Invoice {{ invoice_no }} is ready to download on the order page.</p>"
+		),
+	},
 }
 
 

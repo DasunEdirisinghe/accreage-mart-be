@@ -18,6 +18,7 @@ from accreage_mart.tests.listing_fixtures import (
 	set_status,
 	start_auction_now,
 )
+from accreage_mart.tests.order_fixtures import set_bank_details
 
 NOTIFY = "accreage_mart.utils.notify"
 
@@ -28,6 +29,9 @@ class ApiListingsTestCase(FrappeTestCase):
 		purge(SELLER_A, SELLER_B)
 		self.seller = make_seller(SELLER_A)
 		self.other = make_seller(SELLER_B)
+		# D16 (Epic 08): a seller needs bank details to create / duplicate / resubmit a listing.
+		set_bank_details(self.seller)
+		set_bank_details(self.other)
 		self.category = make_category()
 
 	def tearDown(self):
@@ -545,3 +549,69 @@ class TestNoHardDelete(ApiListingsTestCase):
 		self.as_seller()
 		with self.assertRaises(frappe.PermissionError):
 			frappe.delete_doc("Listing", listing.name)
+
+
+class TestBankDetailsRequired(ApiListingsTestCase):
+	"""D16 (Epic 08): no bank details, no new goods on sale - other listing actions keep working."""
+
+	MESSAGE = "Add your bank details first, so buyers can pay you."
+
+	def setUp(self):
+		super().setUp()
+		frappe.db.set_value("Seller Profile", self.seller, "account_number", None, update_modified=False)
+
+	def assertRefused(self, call, *args, **kwargs):
+		with self.assertRaises(frappe.ValidationError) as caught:
+			call(*args, **kwargs)
+		self.assertIn(self.MESSAGE, str(caught.exception))
+
+	def test_create_is_refused_until_every_bank_field_is_saved(self):
+		self.as_seller()
+		self.assertRefused(api.create_listing, **self.create_args())
+		self.assertFalse(frappe.db.exists("Listing", {"seller": self.seller, "title": "ZZ Test API Carrots"}))
+		self.assertRefused(
+			api.create_listing,
+			**self.create_args(
+				selling_type="Auction",
+				price_per_unit=None,
+				min_bid=100,
+				start_time=str(future(30)),
+				end_time=str(future(42)),
+				auction_terms_acknowledged=1,
+			),
+		)
+		set_bank_details(self.seller)
+		self.assertEqual(api.create_listing(**self.create_args())["status"], "Pending Approval")
+
+	def test_duplicate_is_refused_until_bank_details_are_saved(self):
+		source = make_listing(self.seller, self.category)
+		set_status(source.name, "Archived")
+		self.as_seller()
+		self.assertRefused(api.duplicate_listing, source.name)
+		set_bank_details(self.seller)
+		self.assertEqual(api.duplicate_listing(source.name)["status"], "Pending Approval")
+
+	def test_resubmit_is_refused_until_bank_details_are_saved(self):
+		listing = make_listing(self.seller, self.category)
+		set_status(listing.name, "Rejected")
+		self.as_seller()
+		self.assertRefused(api.resubmit_listing, listing.name)
+		self.assertEqual(self.status_of(listing.name), "Rejected")
+		set_bank_details(self.seller)
+		self.assertEqual(api.resubmit_listing(listing.name)["status"], "Pending Approval")
+
+	def test_a_blank_bank_field_counts_as_missing(self):
+		set_bank_details(self.seller, bank_branch="")
+		self.as_seller()
+		self.assertRefused(api.create_listing, **self.create_args())
+
+	def test_other_listing_actions_still_work_without_bank_details(self):
+		listing = self.published(quantity_available=500)
+		self.as_seller()
+		self.assertEqual(api.update_stock(listing.name, 300)["quantity_available"], 300)
+		api.update_listing(listing.name, {"description": "Even fresher."})
+		api.hide_listing(listing.name, acknowledged=1)
+		self.assertEqual(self.status_of(listing.name), "Hidden")
+		api.unhide_listing(listing.name)
+		api.archive_listing(listing.name, acknowledged=1)
+		self.assertEqual(self.status_of(listing.name), "Archived")

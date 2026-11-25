@@ -141,6 +141,11 @@ def purge_orders(*emails: str) -> None:
 	frappe.set_user("Administrator")
 	listings = frappe.get_all("Listing", filters={"title": ["like", "ZZ Test%"]}, pluck="name")
 	orders = frappe.get_all("Order", filters={"listing": ["in", listings or [""]]}, pluck="name")
+	# Also any order a test user placed whose listing is already gone (left over by an interrupted
+	# run), so a stray order never leaks into the next run's list/stats assertions.
+	if emails:
+		strays = frappe.get_all("Order", filters={"buyer": ["in", list(emails)]}, pluck="name")
+		orders = sorted(set(orders) | set(strays))
 	if orders:
 		proofs = frappe.get_all("Payment Proof", filters={"order": ["in", orders]}, pluck="name")
 		if proofs:
@@ -157,6 +162,16 @@ def purge_orders(*emails: str) -> None:
 			frappe.db.delete(
 				"Comment", {"reference_doctype": "Payment Proof", "reference_name": ["in", proofs]}
 			)
+		# Invoice PDFs (Story 8.4) attached to the test orders.
+		for name in frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": "Order", "attached_to_name": ["in", orders]},
+			pluck="name",
+		):
+			try:
+				frappe.delete_doc("File", name, force=True, ignore_permissions=True)
+			except Exception:
+				frappe.db.delete("File", {"name": name})
 		frappe.db.delete("Comment", {"reference_doctype": "Order", "reference_name": ["in", orders]})
 		frappe.db.delete("Order Offer", {"order": ["in", orders]})
 		frappe.db.delete("Payment Proof", {"order": ["in", orders]})

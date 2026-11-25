@@ -37,6 +37,8 @@ ORDER_FIELDS = {
 	"cancelled_by": "Link",
 	"confirmed_on": "Datetime",
 	"paid_on": "Datetime",
+	"staff_payment_approved_by": "Link",
+	"staff_payment_approval_reason": "Small Text",
 	"delivered_on": "Datetime",
 	"completed_on": "Datetime",
 	"invoice_no": "Data",
