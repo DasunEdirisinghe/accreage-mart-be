@@ -19,7 +19,7 @@ import re
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, get_datetime, now_datetime
+from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
 from accreage_mart.utils import listing as lu
 
@@ -275,6 +275,103 @@ def buyer_has_order(listing_name: str, user: str) -> bool:
 
 def active_order_count(listing_name: str) -> int:
 	return frappe.db.count("Order", {"listing": listing_name, "status": ["in", ACTIVE_STATUSES]})
+
+
+# -- stock impact (D11) ----------------------------------------------------------------------------
+
+# Price agreed but stock not yet subtracted (that happens on payment approval, D7).
+STOCK_HOLDING_STATUSES = (CONFIRMED, PAYMENT_REVIEW)
+# Stock already subtracted for these.
+STOCK_DEDUCTED_STATUSES = (PAID, DELIVERED, COMPLETED)
+
+
+def stock_impact(order) -> dict:
+	"""What the listing's stock looks like if every price-agreed order on it is paid (D11).
+
+	``held_by_others`` is the quantity of the listing's *other* ``confirmed`` /
+	``payment_review`` orders. ``this_order_pending`` says whether this order's quantity is still
+	to come off the stock (False once it was paid, or if it was cancelled). ``projected`` can go
+	negative; ``shortfall`` is how far below zero it goes. Never used to block anything.
+	"""
+	listing = frappe.db.get_value(
+		"Listing", order.get("listing"), ["quantity_available", "unit"], as_dict=True
+	)
+	stock_now = flt(listing.quantity_available) if listing else 0
+	held = frappe.get_all(
+		"Order",
+		filters={
+			"listing": order.get("listing"),
+			"status": ["in", STOCK_HOLDING_STATUSES],
+			"name": ["!=", order.get("name") or ""],
+		},
+		pluck="quantity",
+	)
+	held_total = sum(flt(q) for q in held)
+	this_order = flt(order.get("quantity"))
+	pending = order.get("status") not in (*STOCK_DEDUCTED_STATUSES, CANCELLED)
+	projected = stock_now - held_total - (this_order if pending else 0)
+	return {
+		"unit": order.get("unit") or (listing.unit if listing else None),
+		"stock_now": stock_now,
+		"held_by_others": held_total,
+		"held_order_count": len(held),
+		"this_order": this_order,
+		"this_order_pending": pending,
+		"projected": projected,
+		"shortfall": max(0.0, -projected),
+	}
+
+
+# -- cancellation (D5, D13) ------------------------------------------------------------------------
+
+
+def cancel_refusal(order, actor: str) -> str | None:
+	"""Why ``actor`` may not cancel ``order`` right now, in plain words, or None if they may.
+	Mirrors :func:`can_transition` for ``-> cancelled`` with a message per D5 / D13 case."""
+	if can_transition(order, CANCELLED, actor):
+		return None
+	status = order.get("status")
+	if status == CANCELLED:
+		return _("This order is already cancelled.")
+	if status == PAYMENT_REVIEW:
+		return _("This order can't be cancelled while its payment slip is being reviewed.")
+	if status in STOCK_DEDUCTED_STATUSES:
+		return _("This order can't be cancelled once its payment has been approved.")
+	if status == CONFIRMED:
+		if actor == BUYER:
+			return _(
+				"The price is agreed, so ask the seller to cancel instead (send a cancellation request)."
+			)
+		if actor == SELLER:
+			return _(
+				"The buyer has submitted a payment slip for this order, so only staff can cancel it. "
+				"Ask staff to cancel instead."
+			)
+	return _("You can't cancel this order.")
+
+
+# -- staff recipients ------------------------------------------------------------------------------
+
+
+def staff_users() -> list[str]:
+	"""Enabled, active Staff and Admin users (who get staff-queue notifications)."""
+	from accreage_mart.utils.profile import get_account_status
+
+	names = frappe.get_all(
+		"Has Role",
+		filters={"role": ["in", ["Staff", "Admin"]], "parenttype": "User"},
+		pluck="parent",
+		distinct=True,
+	)
+	names = [n for n in names if n not in ("Administrator", "Guest")]
+	if not names:
+		return []
+	rows = frappe.get_all(
+		"User",
+		filters={"name": ["in", names], "enabled": 1},
+		fields=["name", "enabled", "custom_account_status"],
+	)
+	return sorted(row.name for row in rows if get_account_status(row) == "active")
 
 
 # -- access hooks (see hooks.py) -------------------------------------------------------------------

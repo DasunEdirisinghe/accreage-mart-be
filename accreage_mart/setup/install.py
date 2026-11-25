@@ -257,6 +257,117 @@ EMAIL_TEMPLATES = {
 			"{% endif %}"
 		),
 	},
+	"order_offer_countered": {
+		"subject": "New counter-offer on order {{ order }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ actor_name }}</strong> countered on order {{ order }} "
+			"({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>) with "
+			"<strong>{{ price }}</strong> per {{ unit }} ({{ total }} in total).</p>"
+			"<p>Accept, counter or decline within {{ hours }} hours, or the order is cancelled.</p>"
+			"{% if final %}<p>That was the last counter-offer allowed: you can now only accept or "
+			"decline.</p>{% endif %}"
+		),
+	},
+	"order_offer_accepted": {
+		"subject": "Price agreed on order {{ order }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ actor_name }}</strong> accepted <strong>{{ price }}</strong> per {{ unit }} "
+			"for order {{ order }} ({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>), "
+			"{{ total }} in total.</p>"
+			"{% if for_buyer %}<p>Pay the seller within {{ hours }} hours and upload your payment slip "
+			"on the order page, or the order is cancelled.</p>"
+			"{% else %}<p>The buyer has {{ hours }} hours to pay and upload the payment slip.</p>"
+			"{% endif %}"
+		),
+	},
+	"order_offer_declined": {
+		"subject": "Offer declined - order {{ order }} cancelled",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ actor_name }}</strong> declined the offer of {{ price }} per {{ unit }} on "
+			"order {{ order }} ({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>), so the order "
+			"was cancelled.</p>"
+			"{% if reason %}<p>Reason: {{ reason }}</p>{% endif %}"
+		),
+	},
+	"order_confirmed": {
+		"subject": "Order {{ order }} confirmed - please pay within {{ hours }} hours",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ seller_name }}</strong> confirmed order {{ order }} ({{ quantity }} {{ unit }} "
+			"of <strong>{{ title }}</strong>) at {{ price }} per {{ unit }}, "
+			"<strong>{{ total }}</strong> in total.</p>"
+			"<p>Pay the seller within {{ hours }} hours using the bank details on the order page, then "
+			"upload your payment slip, or the order is cancelled.</p>"
+		),
+	},
+	"order_declined": {
+		"subject": "Order {{ order }} declined",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ seller_name }}</strong> declined order {{ order }} ({{ quantity }} {{ unit }} "
+			"of <strong>{{ title }}</strong>).</p>"
+			"{% if reason %}<p>Reason: {{ reason }}</p>{% endif %}"
+		),
+	},
+	"order_cancelled": {
+		"subject": "Order {{ order }} cancelled",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ actor_name }}</strong> cancelled order {{ order }} ({{ quantity }} {{ unit }} "
+			"of <strong>{{ title }}</strong>).</p>"
+			"{% if reason %}<p>Reason: {{ reason }}</p>{% endif %}"
+		),
+	},
+	"order_cancel_requested": {
+		"subject": "Cancellation request on order {{ order }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ buyer_name }}</strong> asked to cancel order {{ order }} "
+			"({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>).</p>"
+			"<p>Reason: {{ reason }}</p>"
+			"<p>Accept or refuse the request on the order page.</p>"
+		),
+	},
+	"order_cancel_request_refused": {
+		"subject": "Cancellation request refused - order {{ order }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ seller_name }}</strong> refused your request to cancel order {{ order }} "
+			"({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>).</p>"
+			"{% if reason %}<p>Reason: {{ reason }}</p>{% endif %}"
+			"<p>The order stays open: pay the seller within the {{ hours }}-hour payment window and "
+			"upload your payment slip, or the order is cancelled.</p>"
+		),
+	},
+	"order_staff_cancel_requested": {
+		"subject": "Request to cancel order {{ order }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"{% if for_staff %}"
+			"<p><strong>{{ seller_name }}</strong> asked staff to cancel order {{ order }} "
+			"({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>) after a rejected payment slip."
+			"</p><p>Reason: {{ reason }}</p>"
+			"<p>Review it in the payments queue.</p>"
+			"{% else %}"
+			"<p><strong>{{ seller_name }}</strong> asked Accreage Mart staff to cancel your order "
+			"{{ order }} ({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>).</p>"
+			"<p>Reason: {{ reason }}</p>"
+			"<p>Staff will review it. You can still upload a new payment slip before the deadline.</p>"
+			"{% endif %}"
+		),
+	},
+	"order_staff_cancel_request_refused": {
+		"subject": "Staff kept order {{ order }} open",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Staff refused your request to cancel order {{ order }} ({{ quantity }} {{ unit }} of "
+			"<strong>{{ title }}</strong>).</p>"
+			"<p>Reason: {{ reason }}</p>"
+		),
+	},
 }
 
 

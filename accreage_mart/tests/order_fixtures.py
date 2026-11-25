@@ -1,7 +1,7 @@
 """Shared fixtures for the Epic 08 order tests (built on the Epic 04 listing fixtures)."""
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import add_to_date, now_datetime
 
 from accreage_mart.tests.listing_fixtures import (
 	SELLER_A,
@@ -99,6 +99,42 @@ def make_proof(order_name: str, **overrides):
 		return frappe.get_doc(values).insert(ignore_permissions=True)
 
 
+def make_confirmed_order(listing, buyer: str, **overrides):
+	"""A ``confirmed`` order (price agreed at the listed price, 72 h payment clock running)."""
+	values = {
+		"status": ou.CONFIRMED,
+		"status_deadline": ou.deadline_for(ou.CONFIRMED),
+		"agreed_unit_price": listing.price_per_unit,
+		"confirmed_on": now_datetime(),
+	}
+	values.update(overrides)
+	return make_order(listing, buyer, **values)
+
+
+def order_notifications(order_name: str, event: str | None = None) -> list:
+	"""Notification Log rows about ``order_name`` (optionally one event type), oldest first."""
+	filters = {"document_type": "Order", "document_name": order_name}
+	if event:
+		filters["custom_event_type"] = event
+	return frappe.get_all(
+		"Notification Log",
+		filters=filters,
+		fields=["name", "for_user", "subject", "email_content", "custom_event_type"],
+		order_by="creation asc",
+	)
+
+
+def delivery_channels(log_name: str) -> set[str]:
+	return {row.channel for row in frappe.get_doc("Notification Log", log_name).custom_delivery_log}
+
+
+def expire_deadline(order_name: str) -> None:
+	"""Move the order's deadline into the past (the scheduled job hasn't run yet)."""
+	frappe.db.set_value(
+		"Order", order_name, "status_deadline", add_to_date(now_datetime(), minutes=-1), update_modified=False
+	)
+
+
 def purge_orders(*emails: str) -> None:
 	"""Remove every order on the test listings (and their offers, proofs and notifications),
 	then the listings and users via the listing fixtures' purge."""
@@ -135,11 +171,15 @@ __all__ = [
 	"STAFF",
 	"USERS",
 	"approved_listing",
+	"delivery_channels",
+	"expire_deadline",
+	"make_confirmed_order",
 	"make_offer",
 	"make_order",
 	"make_proof",
 	"make_seller",
 	"make_staff",
+	"order_notifications",
 	"purge_orders",
 	"set_bank_details",
 	"setup_world",
