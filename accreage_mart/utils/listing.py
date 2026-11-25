@@ -125,13 +125,14 @@ def require_seller() -> str:
 	return profile
 
 
-def require_buyer() -> str:
-	"""User name of the caller, who must be a logged-in Buyer in good standing."""
+def require_buyer(action: str = "place bids") -> str:
+	"""User name of the caller, who must be a logged-in Buyer in good standing. ``action`` names
+	what they are trying to do, for the refusal message."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		frappe.throw(_("Not authenticated."), frappe.AuthenticationError)
 	if "Buyer" not in frappe.get_roles(user):
-		frappe.throw(_("Only buyers can place bids."), frappe.PermissionError)
+		frappe.throw(_("Only buyers can {0}.").format(_(action)), frappe.PermissionError)
 	user_doc = frappe.db.get_value("User", user, ["custom_account_status", "enabled"], as_dict=True)
 	if get_account_status(user_doc) != "active":
 		frappe.throw(_("Your account is not in good standing."), frappe.PermissionError)
@@ -174,9 +175,12 @@ def stock_state(quantity, low_stock_level) -> str:
 
 
 def viewer_has_order(listing_name: str, user: str) -> bool:
-	"""Whether ``user`` has an order (placed or in progress, or completed) on the listing. Such a
-	buyer may still open a hidden / suspended / archived listing. Wired by the orders epic."""
-	return False
+	"""Whether ``user`` has an order (placed or in progress, or completed - anything but
+	cancelled) on the listing. Such a buyer may still open a hidden / suspended / archived
+	listing."""
+	from accreage_mart.utils.order import buyer_has_order
+
+	return buyer_has_order(listing_name, user)
 
 
 def google_maps_url(latitude, longitude) -> str | None:
@@ -226,8 +230,11 @@ def auction_has_bids(auction_name: str) -> bool:
 
 
 def count_active_orders(listing_name: str) -> int:
-	"""Orders placed or in progress against a listing. Wired up by the orders epic."""
-	return 0
+	"""Orders placed or in progress against a listing: any status except cancelled and
+	completed."""
+	from accreage_mart.utils.order import active_order_count
+
+	return active_order_count(listing_name)
 
 
 HIDE_ARCHIVE_WARNING = (

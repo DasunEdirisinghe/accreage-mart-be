@@ -241,6 +241,22 @@ EMAIL_TEMPLATES = {
 			"<p>Your auction for <strong>{{ title }}</strong> ended with no bids.</p>"
 		),
 	},
+	"order_placed": {
+		"subject": "New order {{ order }} for {{ title }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p><strong>{{ buyer_name }}</strong> placed order {{ order }} for "
+			"{{ quantity }} {{ unit }} of <strong>{{ title }}</strong>.</p>"
+			"{% if offer_price %}"
+			"<p>They offered <strong>{{ offer_price }}</strong> per {{ unit }} "
+			"(your listed price is {{ listed_price }}). Accept, counter or decline the offer "
+			"within {{ hours }} hours, or the order is cancelled.</p>"
+			"{% else %}"
+			"<p>Price: {{ listed_price }} per {{ unit }}, {{ total }} in total. Confirm or decline "
+			"the order within {{ hours }} hours, or it is cancelled.</p>"
+			"{% endif %}"
+		),
+	},
 }
 
 

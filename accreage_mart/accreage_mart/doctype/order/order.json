@@ -1,0 +1,295 @@
+{
+ "actions": [],
+ "autoname": "ORD-.#####",
+ "creation": "2026-11-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "listing",
+  "seller",
+  "buyer",
+  "source",
+  "auction",
+  "column_break_main",
+  "status",
+  "status_deadline",
+  "offer_count",
+  "pricing_section",
+  "quantity",
+  "unit",
+  "listed_unit_price",
+  "column_break_price",
+  "agreed_unit_price",
+  "total_price",
+  "flags_section",
+  "cancel_requested",
+  "cancel_request_reason",
+  "staff_cancel_requested",
+  "staff_cancel_request_reason",
+  "column_break_flags",
+  "needs_staff_review",
+  "has_submitted_proof",
+  "cancel_reason",
+  "cancelled_by",
+  "timeline_section",
+  "confirmed_on",
+  "paid_on",
+  "column_break_timeline",
+  "delivered_on",
+  "completed_on",
+  "invoice_section",
+  "invoice_no",
+  "invoice_file"
+ ],
+ "fields": [
+  {
+   "fieldname": "listing",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Listing",
+   "options": "Listing",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "seller",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Seller",
+   "options": "Seller Profile",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "buyer",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Buyer",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "Direct",
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Direct\nAuction",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.source=='Auction'",
+   "fieldname": "auction",
+   "fieldtype": "Link",
+   "label": "Auction",
+   "options": "Auction",
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "pending_confirmation",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "pending_confirmation\nnegotiating\nconfirmed\npayment_review\npaid\ndelivered\ncompleted\ncancelled",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "The single active timer for the current status; empty when nobody is on a clock.",
+   "fieldname": "status_deadline",
+   "fieldtype": "Datetime",
+   "label": "Status Deadline"
+  },
+  {
+   "default": "0",
+   "fieldname": "offer_count",
+   "fieldtype": "Int",
+   "label": "Offer Count"
+  },
+  {
+   "fieldname": "pricing_section",
+   "fieldtype": "Section Break",
+   "label": "Quantity & Price"
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Quantity",
+   "reqd": 1
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Data",
+   "label": "Unit",
+   "reqd": 1
+  },
+  {
+   "description": "Snapshot of the listing price when the order was placed.",
+   "fieldname": "listed_unit_price",
+   "fieldtype": "Currency",
+   "label": "Listed Unit Price"
+  },
+  {
+   "fieldname": "column_break_price",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Locked when the order is confirmed.",
+   "fieldname": "agreed_unit_price",
+   "fieldtype": "Currency",
+   "label": "Agreed Unit Price"
+  },
+  {
+   "description": "Quantity x the price on the table; final once confirmed.",
+   "fieldname": "total_price",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Total Price"
+  },
+  {
+   "fieldname": "flags_section",
+   "fieldtype": "Section Break",
+   "label": "Requests & Flags"
+  },
+  {
+   "default": "0",
+   "fieldname": "cancel_requested",
+   "fieldtype": "Check",
+   "label": "Cancellation Requested"
+  },
+  {
+   "fieldname": "cancel_request_reason",
+   "fieldtype": "Small Text",
+   "label": "Cancellation Request Reason"
+  },
+  {
+   "default": "0",
+   "fieldname": "staff_cancel_requested",
+   "fieldtype": "Check",
+   "label": "Staff Cancellation Requested"
+  },
+  {
+   "fieldname": "staff_cancel_request_reason",
+   "fieldtype": "Small Text",
+   "label": "Staff Cancellation Request Reason"
+  },
+  {
+   "fieldname": "column_break_flags",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "needs_staff_review",
+   "fieldtype": "Check",
+   "label": "Needs Staff Review"
+  },
+  {
+   "default": "0",
+   "description": "Set on the first payment slip upload; never cleared.",
+   "fieldname": "has_submitted_proof",
+   "fieldtype": "Check",
+   "label": "Has Submitted Proof"
+  },
+  {
+   "fieldname": "cancel_reason",
+   "fieldtype": "Small Text",
+   "label": "Cancel Reason"
+  },
+  {
+   "fieldname": "cancelled_by",
+   "fieldtype": "Link",
+   "label": "Cancelled By",
+   "options": "User"
+  },
+  {
+   "fieldname": "timeline_section",
+   "fieldtype": "Section Break",
+   "label": "Timeline"
+  },
+  {
+   "fieldname": "confirmed_on",
+   "fieldtype": "Datetime",
+   "label": "Confirmed On"
+  },
+  {
+   "fieldname": "paid_on",
+   "fieldtype": "Datetime",
+   "label": "Paid On"
+  },
+  {
+   "fieldname": "column_break_timeline",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "delivered_on",
+   "fieldtype": "Datetime",
+   "label": "Delivered On"
+  },
+  {
+   "fieldname": "completed_on",
+   "fieldtype": "Datetime",
+   "label": "Completed On"
+  },
+  {
+   "fieldname": "invoice_section",
+   "fieldtype": "Section Break",
+   "label": "Invoice"
+  },
+  {
+   "fieldname": "invoice_no",
+   "fieldtype": "Data",
+   "label": "Invoice No"
+  },
+  {
+   "fieldname": "invoice_file",
+   "fieldtype": "Attach",
+   "label": "Invoice File"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Order",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff"
+  },
+  {
+   "read": 1,
+   "role": "Seller"
+  },
+  {
+   "read": 1,
+   "role": "Buyer"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

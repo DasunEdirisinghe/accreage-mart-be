@@ -1,0 +1,102 @@
+{
+ "actions": [],
+ "autoname": "OFR-.#####",
+ "creation": "2026-11-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "order",
+  "offered_by",
+  "party",
+  "unit_price",
+  "offered_on",
+  "outcome"
+ ],
+ "fields": [
+  {
+   "fieldname": "order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Order",
+   "options": "Order",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "offered_by",
+   "fieldtype": "Link",
+   "label": "Offered By",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "party",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Party",
+   "options": "Buyer\nSeller",
+   "reqd": 1
+  },
+  {
+   "fieldname": "unit_price",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Unit Price",
+   "reqd": 1
+  },
+  {
+   "description": "Set automatically when the offer is made.",
+   "fieldname": "offered_on",
+   "fieldtype": "Datetime",
+   "label": "Offered On",
+   "read_only": 1
+  },
+  {
+   "default": "Open",
+   "fieldname": "outcome",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Outcome",
+   "options": "Open\nAccepted\nCountered\nDeclined\nExpired",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Accreage Mart",
+ "name": "Order Offer",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Admin"
+  },
+  {
+   "read": 1,
+   "report": 1,
+   "role": "Staff"
+  },
+  {
+   "read": 1,
+   "role": "Seller"
+  },
+  {
+   "read": 1,
+   "role": "Buyer"
+  }
+ ],
+ "sort_field": "offered_on",
+ "sort_order": "DESC",
+ "states": []
+}
