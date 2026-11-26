@@ -85,6 +85,16 @@ get_invoice        buyer / seller / staff  completed only; downloads the PDF (ma
                                            render at completion failed)
 =================  ======================  ==============================================================
 
+Timers and auction-win orders (Story 8.5)
+-----------------------------------------
+``enforce_order_timers`` (scheduler, every 5 minutes) applies each expired deadline once, under the
+Order row lock: 48 h pending_confirmation / open offer -> cancelled (offer Expired); 72 h confirmed ->
+cancelled if no slip was ever submitted, else ``needs_staff_review`` + staff, buyer and seller notified
+(D13); 7 days delivered -> completed with the invoice. ``create_auction_order`` (called by
+``api.auctions._close_one``) makes the winner's confirmed order - full lot, winning bid, one per
+auction. An order whose seller has no bank details gets no payment clock (D16) until
+``update_my_bank_details`` starts it (``start_pending_payment_clocks``).
+
 ``complete_order(doc, actor)`` is the shared completion step (buyer confirm, and the 8.5 auto-complete
 with actor ``system``).
 
@@ -546,6 +556,7 @@ def update_my_bank_details(bank_name: str, bank_branch: str, account_name: str, 
 	doc.update(values)
 	doc.save(ignore_permissions=True)
 	frappe.db.commit()
+	start_pending_payment_clocks(profile)
 	return _bank_payload(profile)
 
 
@@ -598,6 +609,13 @@ def _reason(reason: str | None, *, required: bool, label: str = "a reason") -> s
 	if len(value) > REASON_MAX:
 		frappe.throw(_("Please keep the reason under {0} characters.").format(REASON_MAX))
 	return value
+
+
+def payment_deadline(seller_profile: str, now):
+	"""The 72 h payment clock for a freshly ``confirmed`` order - or None while the seller has no
+	bank details (D16: only auction-win orders can get there; the clock starts in
+	``update_my_bank_details``)."""
+	return ou.deadline_for(ou.CONFIRMED, now) if ou.has_bank_details(seller_profile) else None
 
 
 def _require_bank_details(order) -> None:
@@ -1325,7 +1343,9 @@ def upload_payment_proof(
 			}
 		).insert(ignore_permissions=True)
 		# Attached to the proof, the private file is readable exactly by who may read the proof
-		# (Frappe's File permission defers to the attached document).
+		# (Frappe's File permission defers to the attached document). Frappe also lets a File's
+		# owner write/delete it whatever the attached document says, so the slip is owned by the
+		# system, never the buyer (D13). insert() always stamps the session user, hence here.
 		frappe.db.set_value(
 			"File",
 			file.name,
@@ -1333,6 +1353,7 @@ def upload_payment_proof(
 				"attached_to_doctype": "Payment Proof",
 				"attached_to_name": proof.name,
 				"attached_to_field": "file",
+				"owner": "Administrator",
 			},
 			update_modified=False,
 		)
@@ -1454,7 +1475,7 @@ def review_payment_proof(
 			)
 			slip.save(ignore_permissions=True)
 			doc.status = ou.CONFIRMED
-			doc.status_deadline = ou.deadline_for(ou.CONFIRMED, now)
+			doc.status_deadline = payment_deadline(doc.seller, now)
 			doc.save(ignore_permissions=True)
 		_notify_proof_rejected(doc, actor, category, why)
 		doc.reload()
@@ -1902,5 +1923,286 @@ def _notify_completed(order, actor: str) -> None:
 		f"Order {order.name} completed",
 		base + invoice,
 		{**context, "for_seller": True},
+		sms=True,
+	)
+
+
+# -- timers and auction-win orders (Story 8.5) -----------------------------------------------------
+
+# Statuses that carry a timer the job enforces (payment_review and paid never do).
+TIMED_STATUSES = (ou.PENDING_CONFIRMATION, ou.NEGOTIATING, ou.CONFIRMED, ou.DELIVERED)
+
+
+def enforce_order_timers() -> None:
+	"""Scheduled every 5 minutes (see ``hooks.py``). One pass over every order whose
+	``status_deadline`` has passed (D4, D13, D14):
+
+	- ``pending_confirmation`` / ``negotiating`` past 48 h -> cancelled (an open offer -> Expired);
+	- ``confirmed`` past 72 h -> cancelled if no slip was ever submitted, otherwise flagged
+	  ``needs_staff_review`` (no clock any more; staff approve a payment or cancel) - D13;
+	- ``delivered`` past 7 days -> completed with its invoice.
+
+	Idempotent: each order is handled under its row lock after re-checking status and deadline, and
+	every outcome clears or replaces the deadline, so a re-run (or an overlapping run) finds nothing to
+	do. An order with no deadline (e.g. an auction-win order waiting for the seller's bank details,
+	D16) is never touched. One order's failure is logged and never stops the others."""
+	names = frappe.get_all(
+		"Order",
+		filters={"status": ["in", TIMED_STATUSES], "status_deadline": ["<", now_datetime()]},
+		pluck="name",
+		order_by="status_deadline asc",
+	)
+	for name in names:
+		try:
+			expire_order(name)
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(title=f"Order timer failed for {name}")
+
+
+def expire_order(name: str) -> str | None:
+	"""Apply the expiry rule to one order if its deadline really passed. Returns what was done
+	(``cancelled`` / ``flagged`` / ``completed``) or None. Commits."""
+	doc = _lock_order(name)
+	now = now_datetime()
+	if doc.status not in TIMED_STATUSES or not ou.deadline_passed(doc, now):
+		frappe.db.commit()  # someone acted (or the job already ran) while we waited: release the lock
+		return None
+
+	if doc.status == ou.DELIVERED:
+		complete_order(doc, ou.SYSTEM)
+		return "completed"
+
+	if doc.status == ou.CONFIRMED and doc.has_submitted_proof:
+		if doc.needs_staff_review:
+			frappe.db.commit()
+			return None
+		with _atomic("expire_order"):
+			doc.needs_staff_review = 1
+			doc.status_deadline = None
+			doc.save(ignore_permissions=True)
+		_notify_payment_flagged(doc)
+		return "flagged"
+
+	why = _expiry_reason(doc)
+	ou.assert_transition(doc, ou.CANCELLED, ou.SYSTEM)
+	with _atomic("expire_order"):
+		if doc.status == ou.NEGOTIATING:
+			_close_open_offers(doc.name, ou.OFFER_EXPIRED)
+		_cancel(doc, None, f"Cancelled automatically: {why}.")
+	_notify_expired(doc, why)
+	return "cancelled"
+
+
+def _expiry_reason(order) -> str:
+	if order.status == ou.PENDING_CONFIRMATION:
+		return f"the seller did not confirm the order within {ou.CONFIRM_HOURS} hours"
+	if order.status == ou.NEGOTIATING:
+		party = ou.open_offer_party(order.name)
+		if party == ou.PARTY_BUYER:
+			return f"the seller did not answer the buyer's offer within {ou.CONFIRM_HOURS} hours"
+		if party == ou.PARTY_SELLER:
+			return f"the buyer did not answer the seller's offer within {ou.CONFIRM_HOURS} hours"
+		return f"the price negotiation got no answer within {ou.CONFIRM_HOURS} hours"
+	return f"no payment slip was uploaded within {ou.PAYMENT_HOURS} hours"
+
+
+def create_auction_order(auction_name: str, winner: str, amount: float):
+	"""D8 - the winner's ``confirmed`` order when an auction closes: the full lot (the listing's
+	``quantity_available`` at close), the winning bid as the unit price, ``source = Auction``.
+
+	Idempotent: the Auction row is locked and an existing order for it is returned instead of a
+	second one. Without the seller's bank details the order gets no payment clock (D16).
+	Returns ``(order, created)``. Commits."""
+	frappe.get_doc("Auction", auction_name, for_update=True)  # serialise overlapping closers
+	existing = frappe.db.get_value("Order", {"auction": auction_name}, "name")
+	if existing:
+		frappe.db.commit()
+		return frappe.get_doc("Order", existing), False
+
+	listing_name = frappe.db.get_value("Listing", {"auction": auction_name}, "name")
+	listing = _lock_listing(listing_name)
+	ou.assert_transition({"status": None}, ou.CONFIRMED, ou.SYSTEM)
+	now = now_datetime()
+	quantity = flt(listing.quantity_available)
+	price = flt(amount)
+	with _atomic("create_auction_order"):
+		order = frappe.get_doc(
+			{
+				"doctype": "Order",
+				"listing": listing.name,
+				"seller": listing.seller,
+				"buyer": winner,
+				"source": ou.SOURCE_AUCTION,
+				"auction": auction_name,
+				"status": ou.CONFIRMED,
+				"status_deadline": payment_deadline(listing.seller, now),
+				"quantity": quantity,
+				"unit": listing.unit,
+				# An auction listing has no listed price; the lot sold at the winning bid.
+				"listed_unit_price": price,
+				"agreed_unit_price": price,
+				"total_price": quantity * price,
+				"offer_count": 0,
+				"confirmed_on": now,
+			}
+		).insert(ignore_permissions=True)
+	_notify_auction_order(order)
+	return order, True
+
+
+def start_pending_payment_clocks(seller_profile: str) -> list[str]:
+	"""D16 - the seller just saved complete bank details: every ``confirmed`` order of theirs that was
+	waiting for them (no deadline, not flagged for staff) gets its 72 h payment clock now, and each
+	buyer is told where to pay. Returns the order names. Commits per order."""
+	if not ou.has_bank_details(seller_profile):
+		return []
+	names = frappe.get_all(
+		"Order",
+		filters={
+			"seller": seller_profile,
+			"status": ou.CONFIRMED,
+			"needs_staff_review": 0,
+			"status_deadline": ["is", "not set"],
+		},
+		pluck="name",
+		order_by="creation asc",
+	)
+	started = []
+	for name in names:
+		doc = _lock_order(name)
+		if doc.status != ou.CONFIRMED or doc.status_deadline or doc.needs_staff_review:
+			frappe.db.commit()
+			continue
+		with _atomic("start_payment_clock"):
+			doc.status_deadline = ou.deadline_for(ou.CONFIRMED, now_datetime())
+			doc.save(ignore_permissions=True)
+		_notify_payment_clock_started(doc)
+		started.append(name)
+	return started
+
+
+# -- notifications (Story 8.5) ---------------------------------------------------------------------
+
+
+def _notify_expired(order, why: str) -> None:
+	"""Both parties: the order was cancelled because its time ran out."""
+	message = f"Order {order.name} ({_what(order)}) was cancelled automatically: {why}."
+	for user in (order.buyer, lu.seller_user_of(order.seller)):
+		_send(
+			"order_expired",
+			user,
+			order,
+			f"Order {order.name} cancelled - time ran out",
+			message,
+			{"reason": why},
+			sms=True,
+		)
+
+
+def _notify_payment_flagged(order) -> None:
+	"""D13 - the payment time ran out after a rejected slip: staff, the buyer and the seller."""
+	hours = ou.PAYMENT_HOURS
+	what = _what(order)
+	for user in ou.staff_users():
+		_send(
+			"order_payment_flagged",
+			user,
+			order,
+			f"Order {order.name} needs staff review",
+			f"Order {order.name} ({what}) needs review: the buyer's payment slip was rejected and no new "
+			f"slip arrived within {hours} hours. Approve a payment or cancel the order in the payments queue.",
+			{"for_role": ou.STAFF, "hours": hours},
+		)
+	_send(
+		"order_payment_flagged",
+		order.buyer,
+		order,
+		f"Order {order.name} passed to staff for review",
+		f"The {hours}-hour payment time on order {order.name} ({what}) ran out after your payment slip was "
+		"rejected. The order is not cancelled: Accreage Mart staff will review it and either approve your "
+		"payment or cancel the order. You can still upload a new payment slip.",
+		{"for_role": ou.BUYER, "hours": hours},
+		sms=True,
+	)
+	_send(
+		"order_payment_flagged",
+		lu.seller_user_of(order.seller),
+		order,
+		f"Order {order.name} passed to staff for review",
+		f"The buyer's {hours}-hour payment time on order {order.name} ({what}) ran out after the payment "
+		"slip was rejected. Accreage Mart staff will now review the order and either approve the payment "
+		"or cancel it.",
+		{"for_role": ou.SELLER, "hours": hours},
+	)
+
+
+def _notify_auction_order(order) -> None:
+	"""The winner and the seller: the auction's order exists. Without the seller's bank details the
+	seller is asked to add them and the buyer is told the payment time starts once they do (D16)."""
+	pending = not order.status_deadline
+	hours = ou.PAYMENT_HOURS
+	price = f"{_rs(order.agreed_unit_price)} per {order.unit}"
+	base = f"Order {order.name} was created for the winning bid: {_what(order)} at {price}, {_rs(order.total_price)} in total."
+	context = {
+		"price": _rs(order.agreed_unit_price),
+		"total": _rs(order.total_price),
+		"hours": hours,
+		"payment_pending": pending,
+	}
+	if pending:
+		buyer_next = (
+			f"The seller is adding their bank details. Your {hours}-hour payment time starts once they do, "
+			"and we'll tell you where to pay."
+		)
+		seller_next = (
+			f"Add your bank details on your profile so the buyer can pay you. The buyer's {hours}-hour "
+			"payment time starts once you save them."
+		)
+	else:
+		buyer_next = _payment_next_step(True) + " The seller's bank details are on the order page."
+		seller_next = _payment_next_step(False)
+	_send(
+		"order_auction_won",
+		order.buyer,
+		order,
+		f"Your auction order {order.name}",
+		f"{base} {buyer_next}",
+		{**context, "for_seller": False},
+		sms=True,
+	)
+	_send(
+		"order_auction_won",
+		lu.seller_user_of(order.seller),
+		order,
+		f"Add your bank details - order {order.name}" if pending else f"Auction order {order.name} created",
+		f"{base} {seller_next}",
+		{**context, "for_seller": True},
+		sms=pending,
+	)
+
+
+def _notify_payment_clock_started(order) -> None:
+	"""D16 - the buyer of a waiting auction order: where to pay, and the 72 h now running."""
+	bank = ou.bank_details_of(order.seller)
+	name = _seller_display_name(order.seller)
+	where = (
+		f"{bank['account_name']}, account {bank['account_number']}, {bank['bank_name']} "
+		f"({bank['bank_branch']} branch)"
+	)
+	_send(
+		"order_payment_details_added",
+		order.buyer,
+		order,
+		f"You can now pay for order {order.name}",
+		f"{name} added their bank details for order {order.name} ({_what(order)}). Pay "
+		f"{_rs(order.total_price)} to {where}, then upload your payment slip within {ou.PAYMENT_HOURS} "
+		"hours, or the order is cancelled.",
+		{
+			"seller_name": name,
+			"total": _rs(order.total_price),
+			"hours": ou.PAYMENT_HOURS,
+			**bank,
+		},
 		sms=True,
 	)

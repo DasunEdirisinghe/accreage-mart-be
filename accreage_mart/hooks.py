@@ -179,6 +179,9 @@ scheduler_events = {
 		"* * * * *": [
 			"accreage_mart.api.auctions.close_expired_auctions",
 		],
+		"*/5 * * * *": [
+			"accreage_mart.api.orders.enforce_order_timers",
+		],
 	},
 }
 

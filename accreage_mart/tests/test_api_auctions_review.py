@@ -11,10 +11,10 @@ from accreage_mart.tests.listing_fixtures import (
 	make_buyer,
 	make_category,
 	make_seller,
-	purge,
 	set_status,
 	start_auction_now,
 )
+from accreage_mart.tests.order_fixtures import purge_orders as purge
 from accreage_mart.utils import listing as lu
 from accreage_mart.utils.profile import create_platform_user
 
@@ -229,13 +229,15 @@ class TestCloseExpiredAuctions(AuctionReviewTestCase):
 			api.close_expired_auctions()
 			api.close_expired_auctions()  # idempotent re-run
 
-		self.assertEqual(send.call_count, 2)
+		# auction_won + auction_sold, plus the winner's order notice to each party (Epic 08, D8).
+		self.assertEqual(send.call_count, 4)
 		recipients = {call.kwargs["recipient"] for call in send.call_args_list}
 		self.assertEqual(recipients, {SELLER_A, BUYER_B})
 		self.assertEqual(
 			sorted(self.notification_events(auction.name, events=["auction_won", "auction_sold"])),
 			sorted(["auction_won", "auction_sold"]),
 		)
+		self.assertEqual(len(frappe.get_all("Order", filters={"auction": auction.name})), 1)
 
 	def test_closes_with_no_bids_and_notifies_only_the_seller_once(self):
 		listing, auction = self.ended_auction()

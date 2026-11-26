@@ -194,6 +194,10 @@ def deadline_info(order) -> dict:
 		if order.get("needs_staff_review"):
 			# The 72 h passed after a rejected slip: staff decide; nobody is on a clock.
 			return _deadline(None, STAFF, None)
+		if not deadline:
+			# D16 - an auction-win order whose seller has no bank details yet: the seller must add
+			# them, and the buyer's 72 h only starts once they do. Nothing happens on its own.
+			return _deadline(None, SELLER, None)
 		on_expiry = ON_EXPIRY_STAFF_REVIEW if order.get("has_submitted_proof") else ON_EXPIRY_CANCEL
 		return _deadline(deadline, BUYER, on_expiry)
 	if status == PAYMENT_REVIEW:

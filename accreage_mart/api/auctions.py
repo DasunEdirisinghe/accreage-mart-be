@@ -32,7 +32,8 @@ never both pass the "exceeds current highest" check against the same stale value
 ``close_expired_auctions`` runs every minute (see ``hooks.py``'s ``scheduler_events``), closing
 every live auction past its ``end_time``. It is idempotent: an auction whose seller has already
 been sent its closing notification (``auction_sold``/``auction_ended_no_bids``) is skipped on a
-later run.
+later run. With a winner, closing also creates the winner's ``confirmed`` order (Epic 08, D8) through
+``api.orders.create_auction_order`` - itself idempotent, one order per auction.
 """
 
 import frappe
@@ -409,6 +410,11 @@ def _close_one(auction_name: str) -> None:
 	listing = _listing_of(auction_name)
 	highest = _highest_bid(auction_name)
 	if highest:
+		# D8 (Epic 08) - the winner's confirmed order first (idempotent: one order per auction), so a
+		# failed notification below never leaves a closed auction without its order.
+		from accreage_mart.api.orders import create_auction_order
+
+		create_auction_order(auction_name, highest["bidder"], highest["amount"])
 		_notify_closed_with_winner(listing, doc, highest)
 	else:
 		_notify_closed_no_bids(listing, doc)

@@ -134,7 +134,7 @@ class TestUpload(PaymentTestCase):
 		file = frappe.get_doc("File", {"file_url": proof["file"], "attached_to_name": proof["name"]})
 		self.assertEqual(file.is_private, 1)
 		self.assertEqual((file.attached_to_doctype, file.attached_to_field), ("Payment Proof", "file"))
-		self.assertEqual(file.owner, BUYER_A)
+		self.assertEqual(file.owner, "Administrator")  # not the buyer: owners may delete (D13)
 
 	def test_jpg_png_and_pdf_are_accepted(self):
 		for content, extension in (
@@ -302,6 +302,20 @@ class TestProofAccess(PaymentTestCase):
 					bool(frappe.has_permission("Payment Proof", "read", doc=proof, user=user)), allowed
 				)
 				self.assertEqual(bool(frappe.has_permission("File", "read", doc=file, user=user)), allowed)
+
+	def test_the_slip_file_is_owned_by_the_system_and_undeletable(self):
+		# Frappe lets a File's owner write/delete it whatever the attached document says (D13).
+		from frappe.core.doctype.file.file import has_permission
+
+		_order, proof_name = self.in_review()
+		file = frappe.get_doc(
+			"File", {"attached_to_doctype": "Payment Proof", "attached_to_name": proof_name}
+		)
+		self.assertEqual(file.owner, "Administrator")
+		for user in (BUYER_A, SELLER_A, STAFF):
+			self.assertTrue(has_permission(file, "read", user=user), user)
+			for ptype in ("write", "delete"):
+				self.assertFalse(has_permission(file, ptype, user=user), f"{user} {ptype}")
 
 	def test_list_queries_hide_other_peoples_proofs(self):
 		self.in_review()

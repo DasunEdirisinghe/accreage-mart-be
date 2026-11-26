@@ -443,6 +443,69 @@ EMAIL_TEMPLATES = {
 			"<p>Invoice {{ invoice_no }} is ready to download on the order page.</p>"
 		),
 	},
+	"order_expired": {
+		"subject": "Order {{ order }} cancelled - time ran out",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Order {{ order }} ({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>) was cancelled "
+			"automatically: {{ reason }}.</p>"
+		),
+	},
+	"order_payment_flagged": {
+		"subject": "Order {{ order }} {% if for_role == 'staff' %}needs staff review{% else %}passed to staff "
+		"for review{% endif %}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"{% if for_role == 'staff' %}"
+			"<p>Order {{ order }} ({{ quantity }} {{ unit }} of <strong>{{ title }}</strong>) needs review: the "
+			"buyer's payment slip was rejected and no new slip arrived within {{ hours }} hours.</p>"
+			"<p>Approve a payment or cancel the order in the payments queue.</p>"
+			"{% elif for_role == 'buyer' %}"
+			"<p>The {{ hours }}-hour payment time on order {{ order }} ({{ quantity }} {{ unit }} of "
+			"<strong>{{ title }}</strong>) ran out after your payment slip was rejected.</p>"
+			"<p>The order is not cancelled: Accreage Mart staff will review it and either approve your "
+			"payment or cancel the order. You can still upload a new payment slip.</p>"
+			"{% else %}"
+			"<p>The buyer's {{ hours }}-hour payment time on order {{ order }} ({{ quantity }} {{ unit }} of "
+			"<strong>{{ title }}</strong>) ran out after the payment slip was rejected.</p>"
+			"<p>Accreage Mart staff will now review the order and either approve the payment or cancel it.</p>"
+			"{% endif %}"
+		),
+	},
+	"order_auction_won": {
+		"subject": "Auction order {{ order }}{% if for_seller and payment_pending %} - add your bank details"
+		"{% endif %}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>Order {{ order }} was created for the winning bid: {{ quantity }} {{ unit }} of "
+			"<strong>{{ title }}</strong> at {{ price }} per {{ unit }}, <strong>{{ total }}</strong> in "
+			"total.</p>"
+			"{% if for_seller and payment_pending %}"
+			"<p>Add your bank details on your profile so the buyer can pay you. The buyer's {{ hours }}-hour "
+			"payment time starts once you save them.</p>"
+			"{% elif for_seller %}"
+			"<p>The buyer has {{ hours }} hours to pay and upload the payment slip.</p>"
+			"{% elif payment_pending %}"
+			"<p>The seller is adding their bank details. Your {{ hours }}-hour payment time starts once they "
+			"do, and we'll tell you where to pay.</p>"
+			"{% else %}"
+			"<p>Pay the seller within {{ hours }} hours and upload your payment slip, or the order is "
+			"cancelled. The seller's bank details are on the order page.</p>"
+			"{% endif %}"
+		),
+	},
+	"order_payment_details_added": {
+		"subject": "You can now pay for order {{ order }}",
+		"response": (
+			"<p>Hi {{ full_name }},</p>"
+			"<p>{{ seller_name }} added their bank details for order {{ order }} ({{ quantity }} {{ unit }} "
+			"of <strong>{{ title }}</strong>).</p>"
+			"<p>Pay <strong>{{ total }}</strong> to:<br>"
+			"{{ account_name }}<br>Account {{ account_number }}<br>{{ bank_name }}, {{ bank_branch }} "
+			"branch</p>"
+			"<p>Then upload your payment slip within {{ hours }} hours, or the order is cancelled.</p>"
+		),
+	},
 }
 
 
